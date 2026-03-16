@@ -1,0 +1,4 @@
+# Dependencies for C++ part (Python __init__.py handles config and registration)
+dependencies:
+  - api
+  - light

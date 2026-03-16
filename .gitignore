@@ -1,0 +1,15 @@
+# ESPHome build
+esphome/.esphome/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+*.local

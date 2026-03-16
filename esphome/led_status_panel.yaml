@@ -1,0 +1,43 @@
+# HA-LED-Status-Panel — ESP8266 D1 mini, 1× 8×8 WS281x
+# Pin DATA: adjust to your wiring (e.g. D4 = GPIO2)
+# Install: ESPHome Dashboard or `esphome run led_status_panel.yaml`
+
+esphome:
+  name: led-status-panel
+  platform: ESP8266
+  board: d1_mini
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "LedPanel-Fallback"
+    password: "ledpanel1"
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+  custom_services: true
+
+ota:
+
+logger:
+
+# Output for WS281x strip (1 panel = 64 LEDs)
+light:
+  - platform: neopixelbus
+    id: strip_light
+    name: "LED Status Panel"
+    type: GRB
+    variant: WS2812
+    pin: D4
+    num_leds: 64
+
+# Custom component: per-LED state, set_led service, behaviors (solid/blink/pulse)
+# source = dossier qui contient les composants (sous-dossiers = noms de composants)
+external_components:
+  - source: components
+
+led_status_panel:
+  light_id: strip_light
+  num_leds: 64
