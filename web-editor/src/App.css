@@ -176,6 +176,18 @@
   color: #888;
 }
 
+.panel-orientation {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.panel-orientation .panel-btn.small {
+  padding: 0.25rem 0.45rem;
+  font-size: 0.75rem;
+}
+
 .panel-actions {
   display: flex;
   gap: 0.5rem;
@@ -225,6 +237,18 @@
   cursor: pointer;
   padding: 0;
   transition: background-color 0.1s;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.led-cell-index {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 0 2px #000;
+  pointer-events: none;
 }
 
 .led-cell:hover {

@@ -7,9 +7,26 @@ const STORAGE_HA_TOKEN = 'led_panel_ha_token';
 
 const DEFAULT_CONFIG = {
   panels: 1,
-  panel_layout: 'zigzag',
+  panel_layout: 'zigzag_h',
+  panel_options: [{ flip_h: false, flip_v: false, layout: 'zigzag_h' }],
   assignments: [],
 };
+
+/** Compute 0-based LED index for one panel (8x8) from (row, col) with flip and layout. */
+function cellToIndex(row, col, opts = {}) {
+  let r = row;
+  let c = col;
+  if (opts.flip_h) c = 7 - c;
+  if (opts.flip_v) r = 7 - r;
+  const layout = opts.layout || 'zigzag_h';
+  if (layout === 'zigzag_h') {
+    return r % 2 === 0 ? r * 8 + c : r * 8 + (7 - c);
+  }
+  if (layout === 'zigzag_v') {
+    return c % 2 === 0 ? c * 8 + r : c * 8 + (7 - r);
+  }
+  return r * 8 + c;
+}
 
 async function fetchHaStates(haUrl, haToken) {
   const base = haUrl.replace(/\/$/, '');
@@ -348,6 +365,7 @@ function AssignmentColumn({
 // ——— Colonne 3 : panneaux ———
 function LedGrid({
   numPanels,
+  panelOptions,
   selectedLeds,
   onCellClick,
   previewColor,
@@ -355,78 +373,135 @@ function LedGrid({
   removeModePanel,
   onRemoveModeToggle,
   onClearPanel,
+  onPanelOptionChange,
 }) {
   const { t } = useTranslation();
   const rows = 8;
   const cols = 8;
   const panels = Array.from({ length: numPanels }, (_, p) => p);
+  const opts = (panel, def = { flip_h: false, flip_v: false, layout: 'zigzag_h' }) =>
+    panelOptions?.[panel] || def;
+  const isCorner = (r, c) =>
+    (r === 0 && c === 0) || (r === 0 && c === 7) || (r === 7 && c === 0) || (r === 7 && c === 7);
 
   return (
     <div className="column column-panels">
       <h3>{t('panelsColumn')}</h3>
       <div className="grid-container">
-        {panels.map((panel) => (
-          <div key={panel} className="panel">
-            <div className="panel-label">Panel {panel}</div>
-            <div
-              className="led-grid"
-              style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
-            >
-              {Array.from({ length: rows * cols }, (_, i) => {
-                const row = Math.floor(i / cols);
-                const col = i % cols;
-                const key = `${panel}-${row}-${col}`;
-                const isSelected = selectedLeds.some(
-                  (l) => l.panel === panel && l.row === row && l.col === col
-                );
-                let color = '#333';
-                if (isSelected && previewColor) {
-                  color = previewColor;
-                } else if (assignedColors && assignedColors.has(key)) {
-                  color = assignedColors.get(key);
-                }
-                const isRemoveMode = removeModePanel === panel;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`led-cell ${isRemoveMode ? 'remove-mode' : ''}`}
-                    style={{ backgroundColor: color }}
-                    onClick={() => onCellClick(panel, row, col)}
-                    title={`${panel} ${row} ${col}`}
-                  />
-                );
-              })}
-            </div>
-            <div className="panel-actions">
-              <button
-                type="button"
-                className={`panel-btn ${removeModePanel === panel ? 'active' : ''}`}
-                onClick={() => onRemoveModeToggle(panel)}
+        {panels.map((panel) => {
+          const panelOpts = opts(panel);
+          return (
+            <div key={panel} className="panel">
+              <div className="panel-label">Panel {panel}</div>
+              <div
+                className="led-grid"
+                style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
               >
-                {t('removeOneCell')}
-              </button>
-              <button
-                type="button"
-                className="panel-btn danger"
-                onClick={() => {
-                  if (window.confirm(t('clearPanelConfirm'))) onClearPanel(panel);
-                }}
-              >
-                {t('clearPanel')}
-              </button>
+                {Array.from({ length: rows * cols }, (_, i) => {
+                  const row = Math.floor(i / cols);
+                  const col = i % cols;
+                  const key = `${panel}-${row}-${col}`;
+                  const isSelected = selectedLeds.some(
+                    (l) => l.panel === panel && l.row === row && l.col === col
+                  );
+                  let color = '#333';
+                  if (isSelected && previewColor) {
+                    color = previewColor;
+                  } else if (assignedColors && assignedColors.has(key)) {
+                    color = assignedColors.get(key);
+                  }
+                  const isRemoveMode = removeModePanel === panel;
+                  const cornerIndex =
+                    isCorner(row, col) ? cellToIndex(row, col, panelOpts) + 1 : null;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`led-cell ${isRemoveMode ? 'remove-mode' : ''}`}
+                      style={{ backgroundColor: color }}
+                      onClick={() => onCellClick(panel, row, col)}
+                      title={`${panel} ${row} ${col}${cornerIndex != null ? ` → #${cornerIndex}` : ''}`}
+                    >
+                      {cornerIndex != null && (
+                        <span className="led-cell-index">{cornerIndex}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="panel-orientation">
+                <button
+                  type="button"
+                  className={`panel-btn small ${panelOpts.flip_h ? 'active' : ''}`}
+                  onClick={() =>
+                    onPanelOptionChange(panel, 'flip_h', !panelOpts.flip_h)
+                  }
+                >
+                  {t('flipH')}
+                </button>
+                <button
+                  type="button"
+                  className={`panel-btn small ${panelOpts.flip_v ? 'active' : ''}`}
+                  onClick={() =>
+                    onPanelOptionChange(panel, 'flip_v', !panelOpts.flip_v)
+                  }
+                >
+                  {t('flipV')}
+                </button>
+                <button
+                  type="button"
+                  className={`panel-btn small ${panelOpts.layout === 'zigzag_h' ? 'active' : ''}`}
+                  onClick={() => onPanelOptionChange(panel, 'layout', 'zigzag_h')}
+                >
+                  {t('sensH')}
+                </button>
+                <button
+                  type="button"
+                  className={`panel-btn small ${panelOpts.layout === 'zigzag_v' ? 'active' : ''}`}
+                  onClick={() => onPanelOptionChange(panel, 'layout', 'zigzag_v')}
+                >
+                  {t('sensV')}
+                </button>
+              </div>
+              <div className="panel-actions">
+                <button
+                  type="button"
+                  className={`panel-btn ${removeModePanel === panel ? 'active' : ''}`}
+                  onClick={() => onRemoveModeToggle(panel)}
+                >
+                  {t('removeOneCell')}
+                </button>
+                <button
+                  type="button"
+                  className="panel-btn danger"
+                  onClick={() => {
+                    if (window.confirm(t('clearPanelConfirm'))) onClearPanel(panel);
+                  }}
+                >
+                  {t('clearPanel')}
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
 
+const defaultPanelOption = () => ({
+  flip_h: false,
+  flip_v: false,
+  layout: 'zigzag_h',
+});
+
 export default function App() {
   const { t, i18n } = useTranslation();
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [numPanels, setNumPanels] = useState(1);
+  const [panelOptions, setPanelOptions] = useState([
+    defaultPanelOption(),
+  ]);
   const [selectedLeds, setSelectedLeds] = useState([]);
   const [currentAssignment, setCurrentAssignment] = useState(null);
   const [previewColor, setPreviewColor] = useState(null);
@@ -444,6 +519,16 @@ export default function App() {
       setHaToken(localStorage.getItem(STORAGE_HA_TOKEN) || '');
     } catch (_) {}
   }, []);
+
+  useEffect(() => {
+    setPanelOptions((prev) => {
+      const next = prev.slice(0, numPanels);
+      while (next.length < numPanels) {
+        next.push(defaultPanelOption());
+      }
+      return next;
+    });
+  }, [numPanels]);
 
   const loadEntities = useCallback(async () => {
     if (!haUrl?.trim() || !haToken?.trim()) return;
@@ -600,8 +685,26 @@ export default function App() {
     setRemoveModePanel(null);
   }, [currentAssignment]);
 
+  const onPanelOptionChange = useCallback((panel, key, value) => {
+    setPanelOptions((prev) => {
+      const next = prev.map((o, i) =>
+        i === panel ? { ...o, [key]: value } : o
+      );
+      return next;
+    });
+  }, []);
+
   const exportJson = useCallback(() => {
-    const blob = new Blob([JSON.stringify({ ...config, panels: numPanels }, null, 2)], {
+    const payload = {
+      ...config,
+      panels: numPanels,
+      panel_options: panelOptions.slice(0, numPanels).map((o) => ({
+        flip_h: !!o.flip_h,
+        flip_v: !!o.flip_v,
+        layout: o.layout || 'zigzag_h',
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
     });
     const a = document.createElement('a');
@@ -609,7 +712,7 @@ export default function App() {
     a.download = 'led_panel_config.json';
     a.click();
     URL.revokeObjectURL(a.href);
-  }, [config, numPanels]);
+  }, [config, numPanels, panelOptions]);
 
   const importJson = useCallback((e) => {
     const file = e.target.files?.[0];
@@ -619,7 +722,22 @@ export default function App() {
       try {
         const data = JSON.parse(ev.target.result);
         setConfig(data);
-        setNumPanels(data.panels ?? 1);
+        const n = data.panels ?? 1;
+        setNumPanels(n);
+        const opts = data.panel_options;
+        if (Array.isArray(opts) && opts.length >= n) {
+          setPanelOptions(
+            opts.slice(0, n).map((o) => ({
+              flip_h: !!o.flip_h,
+              flip_v: !!o.flip_v,
+              layout: o.layout || 'zigzag_h',
+            }))
+          );
+        } else {
+          setPanelOptions(
+            Array.from({ length: n }, () => defaultPanelOption())
+          );
+        }
       } catch (err) {
         console.error(err);
       }
@@ -704,6 +822,7 @@ export default function App() {
         />
         <LedGrid
           numPanels={numPanels}
+          panelOptions={panelOptions}
           selectedLeds={selectedLeds}
           onCellClick={onCellClick}
           previewColor={previewColor}
@@ -713,6 +832,7 @@ export default function App() {
             setRemoveModePanel((p) => (p === panel ? null : panel))
           }
           onClearPanel={clearPanel}
+          onPanelOptionChange={onPanelOptionChange}
         />
       </main>
     </div>

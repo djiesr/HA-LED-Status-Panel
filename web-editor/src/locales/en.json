@@ -49,5 +49,9 @@
   "removeOneCell": "Remove one cell",
   "clearPanel": "Clear all",
   "clearPanelConfirm": "Remove all assignments from this panel?",
-  "deleteRule": "Delete"
+  "deleteRule": "Delete",
+  "flipH": "Flip H",
+  "flipV": "Flip V",
+  "sensH": "Sens H",
+  "sensV": "Sens V"
 }

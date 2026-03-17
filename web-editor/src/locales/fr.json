@@ -49,5 +49,9 @@
   "removeOneCell": "Supprimer une case",
   "clearPanel": "Tout supprimer",
   "clearPanelConfirm": "Vider toutes les assignations de ce panneau ?",
-  "deleteRule": "Supprimer"
+  "deleteRule": "Supprimer",
+  "flipH": "Flip H",
+  "flipV": "Flip V",
+  "sensH": "Sens H",
+  "sensV": "Sens V"
 }
