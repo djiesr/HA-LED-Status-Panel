@@ -4,6 +4,7 @@
   "codeowners": ["@djiesr"],
   "config_flow": true,
   "documentation": "https://github.com/djiesr/HA-LED-Status-Panel",
+  "icon": "mdi:led-strip-variant",
   "integration_type": "device",
   "issue_tracker": "https://github.com/djiesr/HA-LED-Status-Panel/issues",
   "requirements": [],
