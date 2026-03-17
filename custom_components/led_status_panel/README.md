@@ -1,10 +1,30 @@
-# LED Status Panel — Home Assistant integration
+# LED Status Panel — Intégration Home Assistant
 
 Cette intégration charge un fichier de configuration JSON, écoute les changements d’état des entités, évalue les règles par assignation et appelle le service ESPHome `set_led` sur le panneau.
 
+---
+
 ## Installation
 
-Copie le dossier `led_status_panel` dans le répertoire `custom_components` de Home Assistant.
+### Où placer les fichiers
+
+Le dossier **`led_status_panel`** (contenant `__init__.py`, `config_flow.py`, `const.py`, `manifest.json`, `strings.json`, ce README) doit se trouver dans le répertoire **`custom_components`** de ta configuration Home Assistant.
+
+| Type d’installation | Dossier config (exemple) | Chemin complet de l’intégration |
+|--------------------|---------------------------|----------------------------------|
+| Home Assistant OS | `/config` (souvent monté) | `/config/custom_components/led_status_panel/` |
+| Home Assistant Container | volume monté en `config` | `<ton_volume>/custom_components/led_status_panel/` |
+| Home Assistant Core | répertoire config (ex. `~/.homeassistant`) | `~/.homeassistant/custom_components/led_status_panel/` |
+
+Après avoir copié les fichiers : **Redémarrer Home Assistant** (ou recharger l’intégration si déjà installée).
+
+### Installation via HACS (dépôt personnalisé)
+
+1. **Paramètres** → **Modules complémentaires** → **HACS** → **Dépôts personnalisés**.
+2. URL : `https://github.com/djiesr/HA-LED-Status-Panel`
+3. Type : **Intégration**.
+4. Valider, puis **Télécharger** « LED Status Panel ».
+5. Redémarrer Home Assistant.
 
 ## Configuration (menu Intégrations)
 

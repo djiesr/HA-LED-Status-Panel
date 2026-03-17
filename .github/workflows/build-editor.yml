@@ -6,6 +6,9 @@ on:
     types: [published]
   workflow_dispatch:
 
+permissions:
+  contents: write  # required for gh release upload
+
 jobs:
   build:
     runs-on: ubuntu-latest
