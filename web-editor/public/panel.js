@@ -15,6 +15,23 @@ class LedPanelEditorPanel extends HTMLElement {
     this._iframe.style.height = "100%";
     this._iframe.style.border = "none";
     this._iframe.src = "/local/led-panel-editor/index.html";
+    this._iframe.addEventListener("load", () => {
+      try {
+        const token =
+          this._info?.hass?.auth?.accessToken ||
+          this._info?.hass?.auth?.data?.access_token ||
+          null;
+        if (!token) return;
+        this._iframe.contentWindow?.postMessage(
+          {
+            type: "LED_PANEL_EDITOR_HA_AUTH",
+            token,
+            origin: window.location.origin,
+          },
+          window.location.origin
+        );
+      } catch (_) {}
+    });
     this.appendChild(this._iframe);
   }
 }

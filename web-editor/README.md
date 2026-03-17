@@ -42,8 +42,10 @@ Copie **tout le contenu** du zip (ou de `dist/`) dans le dossier **www** de ta c
 2. **Éditer le tableau** (crayon) → **Ajouter une carte**.
 3. En bas : **« Ajouter une carte manuellement »** (ou « Par code »).
 4. Choisis le type **« Carte iframe »** / **« Web frame »** (ou **« Carte de site web »** selon la langue).
-5. **URL :** ` /local/led-panel-editor/`
+5. **URL :** ` /local/led-panel-editor/index.html`
 6. Enregistre. L’éditeur s’affiche dans la carte.
+
+Note : sur Home Assistant, l’URL de **dossier** ` /local/led-panel-editor/` peut renvoyer **403** (pas de listing / pas d’index automatique). Utilise `index.html` comme ci-dessus.
 
 Tu peux déplacer la carte, la mettre dans un onglet dédié « LED Panel », etc.
 

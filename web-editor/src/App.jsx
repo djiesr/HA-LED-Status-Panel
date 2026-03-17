@@ -1,9 +1,11 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import './App.css';
+import { getHaTokenBestEffort, isRunningInsideHomeAssistant, haReadLedPanelConfig, haWriteLedPanelConfig, listenForHaAuthMessage } from './ha.js';
 
 const STORAGE_HA_URL = 'led_panel_ha_url';
 const STORAGE_HA_TOKEN = 'led_panel_ha_token';
+const STORAGE_HA_CONFIG_PATH = 'led_panel_ha_config_path';
 
 const DEFAULT_CONFIG = {
   panels: 1,
@@ -28,10 +30,11 @@ function cellToIndex(row, col, opts = {}) {
   return r * 8 + c;
 }
 
-async function fetchHaStates(haUrl, haToken) {
+async function fetchHaStates(haUrl, haToken, signal) {
   const base = haUrl.replace(/\/$/, '');
   const token = String(haToken || '').trim().replace(/^Bearer\s+/i, '');
   const res = await fetch(`${base}/api/states`, {
+    signal,
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/json',
@@ -57,10 +60,44 @@ const defaultAssignment = () => ({
   rules: [{ condition: 'default', color: '#00FF00', behavior: 'solid' }],
 });
 
+// Templates : préconfiguration Règles + Importance (ordre = if, ifelse…, else)
+const RULE_TEMPLATES = [
+  {
+    id: 'batterie',
+    name: 'Batterie',
+    importance: 'medium',
+    rules: [
+      { condition: 'state >= 50', color: '#00FF00', behavior: 'solid' },
+      { condition: 'state >= 10', color: '#FFFF00', behavior: 'solid' },
+      { condition: 'state >= 1', color: '#FF0000', behavior: 'solid' },
+      { condition: 'default', color: '#FF0000', behavior: 'pulse' },
+    ],
+  },
+  {
+    id: 'on_off',
+    name: 'On/Off',
+    importance: 'medium',
+    rules: [
+      { condition: 'state == "on"', color: '#00FF00', behavior: 'solid' },
+      { condition: 'default', color: '#333333', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'unavailable_alert',
+    name: 'Alerte indisponible',
+    importance: 'high',
+    rules: [
+      { condition: 'unavailable', color: '#FF6600', behavior: 'blink_fast' },
+      { condition: 'default', color: '#00FF00', behavior: 'solid' },
+    ],
+  },
+];
+
 // ——— Colonne 1 : liste des entités ———
 function EntityListColumn({
   haUrl,
   haToken,
+  haEmbedded,
   entities,
   entitySearch,
   setEntitySearch,
@@ -83,7 +120,7 @@ function EntityListColumn({
   return (
     <aside className="column column-entities">
       <h3>{t('entitiesColumn')}</h3>
-      {haUrl && haToken ? (
+      {haToken ? (
         <>
           <button
             type="button"
@@ -119,7 +156,7 @@ function EntityListColumn({
           )}
         </>
       ) : (
-        <p className="hint">{t('noHaConfigured')}</p>
+        <p className="hint">{haEmbedded ? t('noHaConfiguredEmbedded') : t('noHaConfigured')}</p>
       )}
     </aside>
   );
@@ -133,9 +170,12 @@ function AssignmentColumn({
   onChange,
   entities,
   removeRuleAt,
+  moveRuleUp,
+  moveRuleDown,
 }) {
   const { t } = useTranslation();
   const [attrKey, setAttrKey] = useState('');
+  const [templateId, setTemplateId] = useState('');
   const a = assignment || defaultAssignment();
 
   const selectedEntity = entities.find((e) => e?.entity_id === a.entity_id) || null;
@@ -173,6 +213,33 @@ function AssignmentColumn({
           onChange={(e) => onChange({ ...a, entity_id: e.target.value })}
           placeholder="sensor.example"
         />
+      </div>
+
+      <div className="form-group">
+        <label>{t('template')}</label>
+        <select
+          value={templateId}
+          onChange={(e) => {
+            const id = e.target.value;
+            setTemplateId('');
+            if (!id) return;
+            const tmpl = RULE_TEMPLATES.find((m) => m.id === id);
+            if (tmpl) {
+              onChange({
+                ...a,
+                importance: tmpl.importance,
+                rules: tmpl.rules.map((r) => ({ ...r })),
+              });
+            }
+          }}
+        >
+          <option value="">{t('templatePlaceholder')}</option>
+          {RULE_TEMPLATES.map((tmpl) => (
+            <option key={tmpl.id} value={tmpl.id}>
+              {tmpl.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {selectedEntity && (
@@ -295,53 +362,88 @@ function AssignmentColumn({
       </div>
       <div className="form-group">
         <label>{t('rules')}</label>
-        {(a.rules || []).map((rule, idx) => (
-          <div key={idx} className="rule-row">
-            <input
-              type="text"
-              value={rule.condition}
-              onChange={(e) => {
-                const r = [...a.rules];
-                r[idx] = { ...rule, condition: e.target.value };
-                onChange({ ...a, rules: r });
-              }}
-              placeholder="default / state <= 10 / unavailable"
-            />
-            <input
-              type="color"
-              value={rule.color || '#000000'}
-              onChange={(e) => {
-                const r = [...a.rules];
-                r[idx] = { ...rule, color: e.target.value };
-                onChange({ ...a, rules: r });
-              }}
-            />
-            <select
-              value={rule.behavior}
-              onChange={(e) => {
-                const r = [...a.rules];
-                r[idx] = { ...rule, behavior: e.target.value };
-                onChange({ ...a, rules: r });
-              }}
-            >
-              <option value="solid">{t('behaviorSolid')}</option>
-              <option value="blink_fast">{t('behaviorBlinkFast')}</option>
-              <option value="blink_slow">{t('behaviorBlinkSlow')}</option>
-              <option value="pulse">{t('behaviorPulse')}</option>
-              <option value="off">{t('behaviorOff')}</option>
-            </select>
-            {(a.rules || []).length > 1 && (
-              <button
-                type="button"
-                className="rule-delete"
-                onClick={() => removeRuleAt(idx)}
-                title={t('deleteRule')}
+        <p className="form-hint rule-order-hint">{t('ruleOrderHint')}</p>
+        {(a.rules || []).map((rule, idx) => {
+          const ruleCount = (a.rules || []).length;
+          const ruleLabel =
+            idx === 0
+              ? t('ruleIf')
+              : idx === ruleCount - 1
+                ? t('ruleElse')
+                : t('ruleElseIf');
+          return (
+            <div key={idx} className="rule-row">
+              <span className="rule-label" title={t('ruleOrderHint')}>
+                {ruleLabel}
+              </span>
+              <div className="rule-move">
+                <button
+                  type="button"
+                  className="rule-move-btn"
+                  onClick={() => moveRuleUp?.(idx)}
+                  disabled={idx === 0}
+                  title={t('moveRuleUp')}
+                  aria-label={t('moveRuleUp')}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="rule-move-btn"
+                  onClick={() => moveRuleDown?.(idx)}
+                  disabled={idx === ruleCount - 1}
+                  title={t('moveRuleDown')}
+                  aria-label={t('moveRuleDown')}
+                >
+                  ↓
+                </button>
+              </div>
+              <input
+                type="text"
+                value={rule.condition}
+                onChange={(e) => {
+                  const r = [...a.rules];
+                  r[idx] = { ...rule, condition: e.target.value };
+                  onChange({ ...a, rules: r });
+                }}
+                placeholder="default / state <= 10 / unavailable"
+              />
+              <input
+                type="color"
+                value={rule.color || '#000000'}
+                onChange={(e) => {
+                  const r = [...a.rules];
+                  r[idx] = { ...rule, color: e.target.value };
+                  onChange({ ...a, rules: r });
+                }}
+              />
+              <select
+                value={rule.behavior}
+                onChange={(e) => {
+                  const r = [...a.rules];
+                  r[idx] = { ...rule, behavior: e.target.value };
+                  onChange({ ...a, rules: r });
+                }}
               >
-                ×
-              </button>
-            )}
-          </div>
-        ))}
+                <option value="solid">{t('behaviorSolid')}</option>
+                <option value="blink_fast">{t('behaviorBlinkFast')}</option>
+                <option value="blink_slow">{t('behaviorBlinkSlow')}</option>
+                <option value="pulse">{t('behaviorPulse')}</option>
+                <option value="off">{t('behaviorOff')}</option>
+              </select>
+              {(a.rules || []).length > 1 && (
+                <button
+                  type="button"
+                  className="rule-delete"
+                  onClick={() => removeRuleAt(idx)}
+                  title={t('deleteRule')}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          );
+        })}
         <button
           type="button"
           className="add-rule"
@@ -365,6 +467,7 @@ function AssignmentColumn({
 // ——— Colonne 3 : panneaux ———
 function LedGrid({
   numPanels,
+  onNumPanelsChange,
   panelOptions,
   selectedLeds,
   onCellClick,
@@ -387,6 +490,19 @@ function LedGrid({
   return (
     <div className="column column-panels">
       <h3>{t('panelsColumn')}</h3>
+      <div className="panels-count-row">
+        <label>
+          {t('panelsCount')}
+          <select
+            value={numPanels}
+            onChange={(e) => onNumPanelsChange?.(Number(e.target.value))}
+          >
+            <option value={1}>1</option>
+            <option value={2}>2</option>
+            <option value={3}>3</option>
+          </select>
+        </label>
+      </div>
       <div className="grid-container">
         {panels.map((panel) => {
           const panelOpts = opts(panel);
@@ -507,18 +623,54 @@ export default function App() {
   const [previewColor, setPreviewColor] = useState(null);
   const [haUrl, setHaUrl] = useState('');
   const [haToken, setHaToken] = useState('');
+  const [haConfigPath, setHaConfigPath] = useState('led_panel_config.json');
+  const [haFileBusy, setHaFileBusy] = useState(false);
+  const [haFileError, setHaFileError] = useState(null);
+  const [haFileInfo, setHaFileInfo] = useState(null);
   const [entities, setEntities] = useState([]);
   const [entitySearch, setEntitySearch] = useState('');
   const [entitiesLoading, setEntitiesLoading] = useState(false);
   const [entitiesError, setEntitiesError] = useState(null);
   const [removeModePanel, setRemoveModePanel] = useState(null); // index or null
+  const haEmbedded = isRunningInsideHomeAssistant();
+  const abortRef = useRef(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     try {
       setHaUrl(localStorage.getItem(STORAGE_HA_URL) || '');
       setHaToken(localStorage.getItem(STORAGE_HA_TOKEN) || '');
+      setHaConfigPath(localStorage.getItem(STORAGE_HA_CONFIG_PATH) || 'led_panel_config.json');
     } catch (_) {}
   }, []);
+
+  useEffect(() => {
+    if (!haEmbedded) return;
+    const token = getHaTokenBestEffort();
+    if (token) {
+      // In HA we can use same-origin calls (no CORS) and reuse the current origin.
+      // This also satisfies the UI requirement (URL + token) to enable entity loading.
+      setHaUrl(window.location.origin);
+      setHaToken(token);
+    }
+  }, [haEmbedded]);
+
+  useEffect(() => {
+    if (!haEmbedded) return;
+    // Fallback: panel_custom wrapper can postMessage us the token.
+    return listenForHaAuthMessage(({ token, origin }) => {
+      setHaUrl(origin || window.location.origin);
+      setHaToken(token);
+    });
+  }, [haEmbedded]);
 
   useEffect(() => {
     setPanelOptions((prev) => {
@@ -531,13 +683,22 @@ export default function App() {
   }, [numPanels]);
 
   const loadEntities = useCallback(async () => {
-    if (!haUrl?.trim() || !haToken?.trim()) return;
+    if (!haToken?.trim()) return;
+    // Avec un token, on utilise l'URL sauvegardée ou l'origine courante (éditeur servi par HA).
+    const url = haUrl?.trim() || (typeof window !== 'undefined' ? window.location.origin : '');
+    if (!url) return;
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     setEntitiesLoading(true);
     setEntitiesError(null);
     try {
-      const list = await fetchHaStates(haUrl.trim(), haToken.trim());
+      const list = await fetchHaStates(url, haToken.trim(), ctrl.signal);
+      if (!mountedRef.current) return;
       setEntities(Array.isArray(list) ? list : []);
     } catch (err) {
+      if (err?.name === 'AbortError') return;
+      if (!mountedRef.current) return;
       const msg =
         err?.name === 'TypeError' && String(err?.message || '').toLowerCase().includes('fetch')
           ? t('connectionErrorCors')
@@ -545,7 +706,7 @@ export default function App() {
       setEntitiesError(msg);
       setEntities([]);
     } finally {
-      setEntitiesLoading(false);
+      if (mountedRef.current) setEntitiesLoading(false);
     }
   }, [haUrl, haToken, t]);
 
@@ -553,8 +714,72 @@ export default function App() {
     try {
       localStorage.setItem(STORAGE_HA_URL, haUrl);
       localStorage.setItem(STORAGE_HA_TOKEN, haToken);
+      localStorage.setItem(STORAGE_HA_CONFIG_PATH, haConfigPath);
     } catch (_) {}
-  }, [haUrl, haToken]);
+  }, [haUrl, haToken, haConfigPath]);
+
+  const haLoadConfigFile = useCallback(async () => {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setHaFileBusy(true);
+    setHaFileError(null);
+    setHaFileInfo(null);
+    try {
+      const data = await haReadLedPanelConfig({ path: haConfigPath, signal: ctrl.signal });
+      if (!mountedRef.current) return;
+      if (!data || typeof data !== 'object') throw new Error('invalid_json');
+      setConfig(data);
+      const n = data.panels ?? 1;
+      setNumPanels(n);
+      const opts = data.panel_options;
+      if (Array.isArray(opts) && opts.length >= n) {
+        setPanelOptions(
+          opts.slice(0, n).map((o) => ({
+            flip_h: !!o.flip_h,
+            flip_v: !!o.flip_v,
+            layout: o.layout || 'zigzag_h',
+          }))
+        );
+      } else {
+        setPanelOptions(Array.from({ length: n }, () => defaultPanelOption()));
+      }
+      setHaFileInfo(t('importOk') || 'OK');
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      if (mountedRef.current) setHaFileError(err?.message || 'error');
+    } finally {
+      if (mountedRef.current) setHaFileBusy(false);
+    }
+  }, [haConfigPath, t]);
+
+  const haSaveConfigFile = useCallback(async () => {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setHaFileBusy(true);
+    setHaFileError(null);
+    setHaFileInfo(null);
+    try {
+      const payload = {
+        ...config,
+        panels: numPanels,
+        panel_options: panelOptions.slice(0, numPanels).map((o) => ({
+          flip_h: !!o.flip_h,
+          flip_v: !!o.flip_v,
+          layout: o.layout || 'zigzag_h',
+        })),
+      };
+      await haWriteLedPanelConfig({ path: haConfigPath, data: payload, signal: ctrl.signal });
+      if (!mountedRef.current) return;
+      setHaFileInfo(t('saveOk') || 'OK');
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      if (mountedRef.current) setHaFileError(err?.message || 'error');
+    } finally {
+      if (mountedRef.current) setHaFileBusy(false);
+    }
+  }, [config, numPanels, panelOptions, haConfigPath, t]);
 
   const assignedColors = (() => {
     const map = new Map();
@@ -663,6 +888,31 @@ export default function App() {
     [currentAssignment]
   );
 
+  const moveRuleUp = useCallback(
+    (idx) => {
+      if (!currentAssignment?.rules || idx <= 0 || idx >= currentAssignment.rules.length) return;
+      const r = [...currentAssignment.rules];
+      [r[idx - 1], r[idx]] = [r[idx], r[idx - 1]];
+      setCurrentAssignment({ ...currentAssignment, rules: r });
+    },
+    [currentAssignment]
+  );
+
+  const moveRuleDown = useCallback(
+    (idx) => {
+      if (
+        !currentAssignment?.rules ||
+        idx < 0 ||
+        idx >= currentAssignment.rules.length - 1
+      )
+        return;
+      const r = [...currentAssignment.rules];
+      [r[idx], r[idx + 1]] = [r[idx + 1], r[idx]];
+      setCurrentAssignment({ ...currentAssignment, rules: r });
+    },
+    [currentAssignment]
+  );
+
   const clearPanel = useCallback((panel) => {
     setConfig((c) => {
       const keyOf = (l) => `${l.panel}-${l.row}-${l.col}`;
@@ -749,10 +999,20 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>{t('appTitle')}</h1>
-        <details className="ha-connection">
-          <summary>{t('connectHa')}</summary>
-          <div className="ha-fields">
+        {/* Ligne 1 : titre */}
+        <h1 className="header-title">{t('appTitle')}</h1>
+
+        {/* Ligne 2 : Config JSON et accès HA + token + Enregistrer */}
+        <div className="header-row header-row-2">
+          <span className="ha-section-label">{t('configAndAccess')}:</span>
+          <input
+            type="password"
+            placeholder={t('haToken')}
+            value={haToken}
+            onChange={(e) => setHaToken(e.target.value)}
+            className="ha-input"
+          />
+          {!haEmbedded && (
             <input
               type="url"
               placeholder={t('haUrl')}
@@ -760,27 +1020,40 @@ export default function App() {
               onChange={(e) => setHaUrl(e.target.value)}
               className="ha-input"
             />
-            <input
-              type="password"
-              placeholder={t('haToken')}
-              value={haToken}
-              onChange={(e) => setHaToken(e.target.value)}
-              className="ha-input"
-            />
-            <button type="button" onClick={saveHaConnection}>
-              {t('saveConnection')}
-            </button>
+          )}
+          <button type="button" onClick={saveHaConnection} disabled={haFileBusy}>
+            {t('saveConnection')}
+          </button>
+        </div>
+
+        {/* Ligne 3 : note HA détecté */}
+        {haEmbedded && (
+          <div className="header-row header-row-3 hint">
+            {haToken ? t('haDetected') : t('haDetectedNoToken')}
           </div>
-        </details>
-        <div className="header-actions">
-          <label>
-            {t('panels')}
-            <select value={numPanels} onChange={(e) => setNumPanels(Number(e.target.value))}>
-              <option value={1}>1</option>
-              <option value={2}>2</option>
-              <option value={3}>3</option>
-            </select>
-          </label>
+        )}
+
+        {/* Ligne 4 : chemin JSON + Charger + Sauvegarder */}
+        <div className="header-row header-row-4">
+          <input
+            type="text"
+            placeholder={t('configPath')}
+            value={haConfigPath}
+            onChange={(e) => setHaConfigPath(e.target.value)}
+            className="ha-input"
+          />
+          <button type="button" onClick={haLoadConfigFile} disabled={haFileBusy}>
+            {haFileBusy ? '…' : t('loadFromHa')}
+          </button>
+          <button type="button" onClick={haSaveConfigFile} disabled={haFileBusy}>
+            {haFileBusy ? '…' : t('saveToHa')}
+          </button>
+        </div>
+        {haFileError && <p className="form-hint form-error">{haFileError}</p>}
+        {haFileInfo && <p className="form-hint">{haFileInfo}</p>}
+
+        {/* Ligne 5 : Exporter, Importer, langue */}
+        <div className="header-row header-row-5">
           <button type="button" onClick={exportJson}>
             {t('export')}
           </button>
@@ -801,6 +1074,7 @@ export default function App() {
         <EntityListColumn
           haUrl={haUrl}
           haToken={haToken}
+          haEmbedded={haEmbedded}
           entities={entities}
           entitySearch={entitySearch}
           setEntitySearch={setEntitySearch}
@@ -819,9 +1093,12 @@ export default function App() {
           onChange={setCurrentAssignment}
           entities={entities}
           removeRuleAt={removeRuleAt}
+          moveRuleUp={moveRuleUp}
+          moveRuleDown={moveRuleDown}
         />
         <LedGrid
           numPanels={numPanels}
+          onNumPanelsChange={setNumPanels}
           panelOptions={panelOptions}
           selectedLeds={selectedLeds}
           onCellClick={onCellClick}

@@ -34,6 +34,7 @@ from .const import (
     IMPORTANCE_BRIGHTNESS,
     SERVICE_SET_LED_SUFFIX,
 )
+from .http_api import async_register_http_views
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -220,6 +221,11 @@ def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Integration is set up only via config entries (Integrations menu)."""
+    # Register our scoped HTTP API once at startup.
+    try:
+        await async_register_http_views(hass)
+    except Exception as err:
+        _LOGGER.exception("Failed to register HTTP views: %s", err)
     return True
 
 
