@@ -1,8 +1,9 @@
 """
 LED Status Panel — Home Assistant integration.
 
-Loads JSON config, listens to entity state changes, evaluates rules,
-and calls the ESPHome set_led service for each assignment.
+Config via Integrations menu (config entries). Loads JSON config,
+listens to entity state changes, evaluates rules, and calls the
+ESPHome set_led service for each assignment.
 """
 
 from __future__ import annotations
@@ -13,10 +14,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import homeassistant.helpers.config_validation as cv
-import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, Event, callback
 from homeassistant.exceptions import ServiceNotFound
 from homeassistant.helpers.event import async_track_state_change_event
 
@@ -24,26 +23,41 @@ from .const import (
     BEHAVIOR_TO_INT,
     CONF_CONFIG_FILE,
     CONF_ENTITY_ID,
+    CONF_FLIP_H,
+    CONF_FLIP_V,
+    CONF_LAYOUT,
+    CONF_PANEL_OPTIONS,
     DEFAULT_LAYOUT,
     DEFAULT_PANELS,
     DOMAIN,
+    ENTITY_OBJECT_ID_SUFFIX,
     IMPORTANCE_BRIGHTNESS,
-    SERVICE_SET_LED,
+    SERVICE_SET_LED_SUFFIX,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-CONFIG_SCHEMA = vol.Schema(
-    {
-        DOMAIN: vol.Schema(
-            {
-                vol.Required(CONF_CONFIG_FILE): cv.string,
-                vol.Required(CONF_ENTITY_ID): cv.entity_id,
-            }
-        )
-    },
-    extra=vol.ALLOW_EXTRA,
-)
+# Max retries when ESPHome service is not yet available at startup
+SET_LED_RETRY_COUNT = 5
+SET_LED_RETRY_DELAY = 5.0
+
+SERVICE_DOMAIN_ESPHOME = "esphome"
+
+
+def _entity_id_to_set_led_service_name(entity_id: str) -> str:
+    """Derive ESPHome set_led service name from panel light entity_id.
+    ESPHome registers esphome.<device_name>_set_led per device; entity_id is
+    typically light.<device_name>_led_status_panel."""
+    if "." in entity_id:
+        object_id = entity_id.split(".", 1)[1]
+    else:
+        object_id = entity_id
+    suffix = "_" + ENTITY_OBJECT_ID_SUFFIX
+    if object_id.endswith(suffix):
+        device_name = object_id[: -len(suffix)].rstrip("_")
+    else:
+        device_name = object_id
+    return device_name + "_" + SERVICE_SET_LED_SUFFIX
 
 
 def _load_config_sync(path: Path) -> dict[str, Any] | None:
@@ -67,18 +81,44 @@ async def _load_config(config_path: str, hass: HomeAssistant) -> dict[str, Any] 
     return await hass.async_add_executor_job(_load_config_sync, path)
 
 
+def _get_panel_option(panel_options: list[dict] | None, panel: int, key: str, default: Any) -> Any:
+    """Get option for a panel; panel_options is a list of dicts (flip_h, flip_v, layout)."""
+    if not panel_options or panel >= len(panel_options):
+        return default
+    return panel_options[panel].get(key, default)
+
+
 def _panel_layout_to_index(
-    panel: int, row: int, col: int, panels: int, layout: str
+    panel: int,
+    row: int,
+    col: int,
+    panels: int,
+    layout: str,
+    panel_options: list[dict] | None = None,
 ) -> int:
-    """Map (panel, row, col) to linear LED index. One panel = 8x8 = 64 LEDs."""
+    """
+    Map (panel, row, col) to linear LED index. One panel = 8x8 = 64 LEDs.
+    panel_options: list of { flip_h, flip_v, layout } per panel.
+    """
     if panel < 0 or row < 0 or row > 7 or col < 0 or col > 7:
         return -1
-    # Single panel: zigzag horizontal (row 0 L->R, row 1 R->L, ...)
-    if layout == "zigzag_h":
+    flip_h = _get_panel_option(panel_options, panel, CONF_FLIP_H, False)
+    flip_v = _get_panel_option(panel_options, panel, CONF_FLIP_V, False)
+    panel_layout = _get_panel_option(panel_options, panel, CONF_LAYOUT, layout)
+    if flip_h:
+        col = 7 - col
+    if flip_v:
+        row = 7 - row
+    if panel_layout == "zigzag_h":
         if row % 2 == 0:
             idx = row * 8 + col
         else:
             idx = row * 8 + (7 - col)
+    elif panel_layout == "zigzag_v":
+        if col % 2 == 0:
+            idx = col * 8 + row
+        else:
+            idx = col * 8 + (7 - row)
     else:
         idx = row * 8 + col
     return panel * 64 + idx
@@ -103,8 +143,6 @@ def _evaluate_rules(state: str, attr: dict, rules: list[dict]) -> dict | None:
         rhs_raw = (rhs_raw or "").strip()
         lhs_num = _try_float(lhs)
         rhs_num = _try_float(rhs_raw)
-
-        # If both sides are numeric, do numeric compare
         if lhs_num is not None and rhs_num is not None:
             if op == "==":
                 return lhs_num == rhs_num
@@ -119,8 +157,6 @@ def _evaluate_rules(state: str, attr: dict, rules: list[dict]) -> dict | None:
             if op == ">=":
                 return lhs_num >= rhs_num
             return False
-
-        # Fallback to string compare (only == / != make sense)
         lhs_s = "" if lhs is None else str(lhs).strip()
         if op == "==":
             return lhs_s == rhs_raw
@@ -136,8 +172,6 @@ def _evaluate_rules(state: str, attr: dict, rules: list[dict]) -> dict | None:
             return rule
         if state == "unavailable":
             continue
-
-        # attribute.xxx [op rhs] OR attribute.xxx (exists)
         if cond.startswith("attribute."):
             rest = cond[len("attribute.") :].strip()
             for op in ("<=", ">=", "==", "!=", "<", ">", "="):
@@ -154,17 +188,13 @@ def _evaluate_rules(state: str, attr: dict, rules: list[dict]) -> dict | None:
                         return rule
                     break
             else:
-                # No operator: match if attribute exists (and not None)
                 key = rest.strip()
                 if key and attr.get(key) is not None:
                     return rule
             continue
-
-        # state [op rhs] (supports "state == on", "state = on", "state <= 10")
         s = cond.strip()
         if s.startswith("state"):
             s = s[len("state") :].strip()
-        # accepter "=" comme égalité (en plus de "==")
         for op in ("<=", ">=", "==", "!=", "<", ">", "="):
             if op in s:
                 _, rhs = s.split(op, 1)
@@ -189,46 +219,84 @@ def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up LED Status Panel from configuration.yaml."""
-    if DOMAIN not in config:
-        _LOGGER.warning(
-            "LED Status Panel: aucun bloc 'led_status_panel' dans configuration.yaml — "
-            "ajoute le bloc puis redémarre HA."
-        )
-        return True
+    """Integration is set up only via config entries (Integrations menu)."""
+    return True
 
-    _LOGGER.info("LED Status Panel: démarrage (configuration détectée)...")
-    conf = config[DOMAIN]
-    config_file = conf[CONF_CONFIG_FILE]
-    panel_entity_id = conf[CONF_ENTITY_ID]
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up LED Status Panel from a config entry."""
+    config_file = entry.data.get(CONF_CONFIG_FILE)
+    panel_entity_id = entry.data.get(CONF_ENTITY_ID)
+    if not config_file or not panel_entity_id:
+        _LOGGER.error("LED Status Panel: config entry missing config_file or entity_id")
+        return False
 
     data = await _load_config(config_file, hass)
     if not data:
-        _LOGGER.error("LED Status Panel: cannot start without config. Check config_file path: %s", config_file)
+        _LOGGER.error(
+            "LED Status Panel: cannot start without config. Check config_file path: %s",
+            config_file,
+        )
         return False
 
     panels = data.get("panels", DEFAULT_PANELS)
     layout = data.get("panel_layout", DEFAULT_LAYOUT)
+    panel_options = data.get(CONF_PANEL_OPTIONS)  # list of { flip_h, flip_v, layout } per panel
     assignments = data.get("assignments", [])
     assignments_with_leds = [a for a in assignments if (a.get("leds") or [])]
     _LOGGER.info(
         "LED Status Panel: config chargée (%s) — %d assignations, %d avec LEDs",
-        config_file, len(assignments), len(assignments_with_leds),
+        config_file,
+        len(assignments),
+        len(assignments_with_leds),
     )
 
-    # Au démarrage le panneau ESPHome peut ne pas être connecté (entité pas encore dans hass.states).
-    # On ne bloque pas le setup : l'intégration démarre, les appels set_led marcheront une fois connecté.
+    # Un seul device : 1 ou 2 panneaux physiques en chaîne sur le même ESP → même service
+    service_name = _entity_id_to_set_led_service_name(panel_entity_id)
+
     if hass.states.get(panel_entity_id) is None:
         _LOGGER.warning(
-            "LED Status Panel: entité '%s' pas encore disponible (panneau déconnecté ?). L'intégration démarre ; les LEDs se mettront à jour à la connexion.",
+            "LED Status Panel: entité '%s' pas encore disponible. Les LEDs se mettront à jour à la connexion.",
             panel_entity_id,
         )
 
-    service_domain = "esphome"
-    _service_not_found_logged = [False]  # pour ne loguer qu'une fois
+    service_not_found_logged = [False]
+    unsubs: list[Any] = []
+    panel_unsub: Any = None
+
+    async def _call_set_led_with_retry(service_data: dict, led_idx: int, service_name: str) -> None:
+        """Call set_led with retries when ESPHome starts after the integration.
+        service_name is the per-device name (e.g. led_status_panel_2_set_led)."""
+        for attempt in range(SET_LED_RETRY_COUNT):
+            try:
+                await hass.services.async_call(
+                    SERVICE_DOMAIN_ESPHOME,
+                    service_name,
+                    service_data,
+                    blocking=True,
+                )
+                return
+            except ServiceNotFound:
+                if attempt < SET_LED_RETRY_COUNT - 1:
+                    await asyncio.sleep(SET_LED_RETRY_DELAY)
+                else:
+                    if not service_not_found_logged[0]:
+                        service_not_found_logged[0] = True
+                        _LOGGER.warning(
+                            "LED Status Panel: service %s non trouvé (ESPHome pas prêt ?). "
+                            "Les LEDs se mettront à jour au prochain changement d'état ou après reconnexion.",
+                            service_name,
+                        )
+            except Exception as err:
+                _LOGGER.exception(
+                    "LED Status Panel: échec set_led (led_index=%s): %s",
+                    led_idx,
+                    err,
+                )
+                return
 
     @callback
-    def _on_state_changed(event):
+    def _on_state_changed(event: Event) -> None:
         new_state = event.data.get("new_state")
         entity_id = event.data.get("entity_id")
         if not new_state:
@@ -245,19 +313,23 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             if not rule_result:
                 _LOGGER.debug(
                     "LED Status Panel: %s = %s (aucune règle ne correspond)",
-                    entity_id, state_str,
+                    entity_id,
+                    state_str,
                 )
                 continue
             led_list = assignment.get("leds", [])
             _LOGGER.info(
                 "LED Status Panel: %s = %s → règle « %s » → %d LED(s)",
-                entity_id, state_str, rule_result.get("condition", ""), len(led_list),
+                entity_id,
+                state_str,
+                rule_result.get("condition", ""),
+                len(led_list),
             )
             color_hex = rule_result.get("color", "#000000")
             behavior_str = rule_result.get("behavior", "solid")
-            behavior_int = BEHAVIOR_TO_INT.get(behavior_str, 1)  # 1=solid default
+            behavior_int = BEHAVIOR_TO_INT.get(behavior_str, 1)
             importance = assignment.get("importance", "medium")
-            brightness = IMPORTANCE_BRIGHTNESS.get(importance, 30)  # 0-100 for API
+            brightness = IMPORTANCE_BRIGHTNESS.get(importance, 30)
             r, g, b = _hex_to_rgb(color_hex)
             if behavior_str == "off":
                 r, g, b, brightness = 0, 0, 0, 0
@@ -266,7 +338,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                 panel = led_spec.get("panel", 0)
                 row = led_spec.get("row", 0)
                 col = led_spec.get("col", 0)
-                idx = _panel_layout_to_index(panel, row, col, panels, layout)
+                idx = _panel_layout_to_index(
+                    panel, row, col, panels, layout, panel_options
+                )
                 if idx < 0:
                     continue
                 service_data = {
@@ -277,43 +351,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                     "brightness": brightness,
                     "behavior": behavior_int,
                 }
+                hass.async_create_task(_call_set_led_with_retry(service_data, idx, service_name))
 
-                async def _call_set_led(
-                    sd=service_data,
-                    led_idx=idx,
-                ):
-                    try:
-                        await hass.services.async_call(
-                            service_domain,
-                            SERVICE_SET_LED,
-                            sd,
-                            blocking=True,
-                        )
-                    except ServiceNotFound:
-                        if not _service_not_found_logged[0]:
-                            _service_not_found_logged[0] = True
-                            _LOGGER.warning(
-                                "LED Status Panel: service set_led non trouvé (ESPHome pas prêt ou plusieurs panneaux ?). Les LEDs se mettront à jour au prochain changement d'état ou après reconnexion."
-                            )
-                    except Exception as err:
-                        _LOGGER.exception(
-                            "LED Status Panel: échec set_led (led_index=%s): %s",
-                            led_idx,
-                            err,
-                        )
-
-                hass.create_task(_call_set_led())
-
-    for assignment in assignments:
-        entity_id = assignment.get("entity_id")
-        if entity_id:
-            async_track_state_change_event(hass, entity_id, _on_state_changed)
-
-    # Appliquer l'état actuel des entités après un délai (laisser ESPHome s'authentifier)
-    from homeassistant.core import Event
-
-    async def _apply_initial_states_delayed() -> None:
-        await asyncio.sleep(45)  # laisser le temps à ESPHome de s'authentifier et d'enregistrer le service
+    def _apply_initial_states() -> None:
         for assignment in assignments:
             entity_id = assignment.get("entity_id")
             if not entity_id:
@@ -331,6 +371,30 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             )
             _on_state_changed(fake_event)
 
+    @callback
+    def _panel_became_available(event: Event) -> None:
+        new_state = event.data.get("new_state")
+        if new_state and new_state.state != "unavailable":
+            _apply_initial_states()
+            if panel_unsub and callable(panel_unsub) and panel_unsub in unsubs:
+                unsubs.remove(panel_unsub)
+                panel_unsub()
+
+    for assignment in assignments:
+        entity_id = assignment.get("entity_id")
+        if entity_id:
+            unsubs.append(
+                async_track_state_change_event(hass, entity_id, _on_state_changed)
+            )
+    panel_unsub = async_track_state_change_event(
+        hass, panel_entity_id, _panel_became_available
+    )
+    unsubs.append(panel_unsub)
+
+    async def _apply_initial_states_delayed() -> None:
+        await asyncio.sleep(45)
+        _apply_initial_states()
+
     hass.async_create_task(_apply_initial_states_delayed())
 
     entity_ids = list({a.get("entity_id") for a in assignments if a.get("entity_id")})
@@ -339,4 +403,21 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         len(entity_ids),
         ", ".join(entity_ids) if entity_ids else "(aucune)",
     )
+
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {"unsubs": unsubs}
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    data = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+    if not data:
+        return True
+    for unsub in data.get("unsubs", []):
+        if callable(unsub):
+            try:
+                unsub()
+            except ValueError:
+                # Listener already removed (e.g. panel became available and self-unsubbed)
+                pass
     return True

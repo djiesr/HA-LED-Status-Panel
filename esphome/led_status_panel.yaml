@@ -23,7 +23,7 @@ ota:
 
 logger:
 
-# Output for WS281x strip (1 panel = 64 LEDs)
+# Output for WS281x strip. 1 panel = 64 LEDs ; 2 panneaux chaînés = 128
 light:
   - platform: neopixelbus
     id: strip_light
@@ -31,7 +31,7 @@ light:
     type: GRB
     variant: WS2812
     pin: D4
-    num_leds: 64
+    num_leds: 128  # 2 panneaux 8×8 en série
 
 # Custom component: per-LED state, set_led service, behaviors (solid/blink/pulse)
 # source = dossier qui contient les composants (sous-dossiers = noms de composants)
@@ -40,4 +40,4 @@ external_components:
 
 led_status_panel:
   light_id: strip_light
-  num_leds: 64
+  num_leds: 128  # même valeur que light (2 panneaux)

@@ -1,75 +1,74 @@
 # LED Status Panel — Home Assistant integration
 
-This integration loads a JSON configuration file, listens to entity state changes, evaluates rules per assignment, and calls the ESPHome `set_led` service on your panel device.
+Cette intégration charge un fichier de configuration JSON, écoute les changements d’état des entités, évalue les règles par assignation et appelle le service ESPHome `set_led` sur le panneau.
 
 ## Installation
 
-Copy the `led_status_panel` folder into your Home Assistant `custom_components` directory.
+Copie le dossier `led_status_panel` dans le répertoire `custom_components` de Home Assistant.
 
-## Configuration (configuration.yaml)
+## Configuration (menu Intégrations)
 
-```yaml
-led_status_panel:
-  config_file: led_panel_config.json   # path relative to config or absolute
-  entity_id: light.led_status_panel_led_status_panel   # entité ESPHome du panneau
+**Plus de configuration YAML.** Tout se fait via l’interface :
+
+1. **Paramètres** → **Appareils et services** → **Intégrations** → **Ajouter une intégration**.
+2. Recherche **LED Status Panel**.
+3. Saisis le **chemin du fichier JSON** (ex. `led_panel_config.json`, relatif au dossier config HA).
+4. Choisis l’**entité du panneau** (light exposée par ESPHome).
+
+Le fichier JSON doit exister et être un JSON valide (exporté depuis l’éditeur web). Tu peux modifier l’entrée plus tard via **Options** sur la carte de l’intégration.
+
+## Format JSON (éditeur web)
+
+Le JSON peut contenir :
+
+- **panels** : nombre de panneaux (1, 2 ou 3).
+- **panel_options** : liste d’options par panneau (optionnel) :
+  - **flip_h** : miroir horizontal (booléen).
+  - **flip_v** : miroir vertical (booléen).
+  - **layout** : `"zigzag_h"` (serpentin horizontal) ou `"zigzag_v"` (serpentin vertical).
+- **assignments** : liste d’assignations (entité, règles, leds, importance).
+
+Exemple minimal :
+
+```json
+{
+  "panels": 1,
+  "panel_options": [{ "flip_h": false, "flip_v": false, "layout": "zigzag_h" }],
+  "assignments": []
+}
 ```
 
-- **config_file**: Path to the JSON config produced by the web editor (e.g. in `/config/`).
-- **entity_id**: L’entité du panneau ESPHome (ex. `light.led_status_panel_led_status_panel`). Paramètres → Périphériques → ton panneau → liste des entités.
+## Prérequis
 
-After editing `configuration.yaml`, restart Home Assistant. The integration will load assignments and subscribe to the configured entities; on state change it will evaluate rules and call `set_led` on the ESP.
+- Appareil ESPHome avec le service custom `set_led` (firmware de ce dépôt).
+- Fichier JSON au format produit par l’éditeur web.
 
-**Migration** : si tu avais `device_id`, remplace par `entity_id` avec l’entité du panneau (ex. `light.led_status_panel_led_status_panel`).
+## Dépannage
 
-## Requirements
+### Aucune ligne « LED Status Panel » dans les journaux
 
-- ESPHome device with the `set_led` custom service (this repo’s firmware).
-- JSON config in the format produced by the web editor (see documentation).
+1. **Emplacement** : `<config>/custom_components/led_status_panel/` avec `__init__.py`, `config_flow.py`, `const.py`, `manifest.json`, `strings.json`, `README.md`.
+2. **Configuration** : ajout de l’intégration via **Intégrations** (pas de bloc YAML).
+3. **Niveau des journaux** : au moins **Avertissement** ; recherche « LED Status Panel ».
 
-## Dépannage — « Rien dans les logs » ou « Rien ne se passe »
+### « Service set_led non trouvé »
 
-### Si tu n’as **aucune** ligne « LED Status Panel » dans les journaux après redémarrage
+L’intégration démarre parfois avant qu’ESPHome n’enregistre le service. Elle :
 
-1. **Emplacement du custom component**  
-   Le dossier doit être exactement :  
-   `<dossier config HA>/custom_components/led_status_panel/`  
-   avec dedans : `__init__.py`, `const.py`, `manifest.json`, `README.md`.  
-   Sur HA OS / container, le dossier config est souvent `/config`, donc :  
-   `/config/custom_components/led_status_panel/`.
+- **Réessaie** plusieurs fois avec délai (5 s) avant d’abandonner.
+- **Réapplique** l’état initial quand l’entité du panneau devient disponible (reconnexion ESP).
+- **Réapplique** aussi après 45 s au premier chargement.
 
-2. **Chargement de `configuration.yaml`**  
-   Le bloc doit être à la **racine** de `configuration.yaml` (pas dans un autre bloc) :
-   ```yaml
-   led_status_panel:
-     config_file: led_panel_config.json
-     entity_id: light.led_status_panel_led_status_panel
-   ```
-   Après toute modification, **redémarrer** Home Assistant (pas seulement recharger les intégrations).
+Si le message apparaît une fois puis plus rien : normal au démarrage. Les LEDs se mettent à jour au prochain changement d’état ou à la reconnexion du panneau.
 
-3. **Niveau des journaux**  
-   Paramètres → Système → Journaux : vérifier que le niveau affiche au moins **Avertissement** (Warning).  
-   Rechercher dans la page : `LED Status Panel`.
+### Deux panneaux sur le même ESP (chaînés)
 
-4. **Ce que tu dois voir si tout est OK**  
-   Au démarrage, tu dois avoir au moins une de ces lignes :
-   - `LED Status Panel: aucun bloc 'led_status_panel' dans configuration.yaml` → le composant est chargé mais le bloc manque dans le YAML.
-   - `LED Status Panel: démarrage (configuration détectée)...` puis `config chargée` puis `prêt — écoute N entité(s)` → l’intégration tourne.
+Un 2ᵉ panneau physique branché en série sur la même bande = **un seul device**, une seule entité. Les index LED 64–127 sont envoyés au même service. Vérifie que dans ta config ESPHome le composant `light` (neopixelbus) et `led_status_panel` ont **`num_leds: 128`** (et non 64), sinon le firmware ignore les index ≥ 64.
 
-5. **Si tu vois « entité … introuvable »**  
-   Corriger le `entity_id` (Paramètres → Périphériques → panneau ESPHome → entités du périphérique, ex. `light.led_status_panel_...`).
+### Deux installations (2 appareils ESP distincts)
+
+Pour une 2ᵉ installation (2ᵉ ESP) : **Ajouter une intégration** → LED Status Panel, puis configurer le 2ᵉ fichier JSON et l’entité du 2ᵉ panneau. Chaque entrée appelle le service de son appareil.
 
 ### Renommer le service ESPHome
 
-Si tu renommes le service dans le firmware ESPHome, mets à jour la constante `SERVICE_SET_LED` dans `custom_components/led_status_panel/const.py` pour qu’elle corresponde au nouveau nom.
-
-### « Service not found » ou « extra keys » avec plusieurs panneaux
-
-L’intégration appelle le service **sans cible** (l’API ESPHome rejette `entity_id` dans les data). Avec **un seul** panneau ESPHome qui expose ce service, ça fonctionne. Avec **plusieurs** panneaux, HA peut ne pas trouver le service ou l’envoyer au mauvais device. Dans ce cas : n’avoir qu’un seul device ESPHome avec ce service, ou créer une **automatisation/script** qui cible l’entité du panneau et déclencher ce script depuis l’intégration (avancé).
-
-6. **Au démarrage**  
-   L’état initial des entités est appliqué aux LEDs **45 secondes** après le chargement (pour laisser ESPHome se connecter). Si le service n’est pas encore enregistré, un seul avertissement apparaît : *« service set_led non trouvé … »* ; les LEDs se mettront à jour au prochain changement d’état. Pas de traceback dans ce cas.
-
-7. **Quand tu allumes/éteins la light**  
-   Tu devrais voir une ligne du type :  
-   `LED Status Panel: light.xxx = on → règle « state == on » → 1 LED(s)`.  
-   Si cette ligne n’apparaît pas alors que « prêt — écoute » est là, l’entité écoutée n’est peut‑être pas la bonne (vérifier l’`entity_id` dans le JSON).
+Si tu renommes le service dans le firmware, mets à jour `SERVICE_SET_LED_SUFFIX` et `ENTITY_OBJECT_ID_SUFFIX` dans `const.py`.

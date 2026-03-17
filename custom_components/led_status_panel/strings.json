@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurer LED Status Panel",
+        "description": "Chemin du fichier JSON (éditeur web) et entité du panneau ESPHome.",
+        "data": {
+          "config_file": "Fichier de config (ex: led_panel_config.json)",
+          "entity_id": "Entité du panneau (light.xxx)"
+        }
+      }
+    },
+    "error": {
+      "config_file_required": "Indiquez le fichier de configuration JSON.",
+      "entity_required": "Sélectionnez l'entité du panneau.",
+      "config_file_invalid": "Fichier introuvable ou JSON invalide."
+    },
+    "abort": {
+      "already_configured": "Cette entité est déjà configurée."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options LED Status Panel",
+        "data": {
+          "config_file": "Fichier de config",
+          "entity_id": "Entité du panneau"
+        }
+      }
+    }
+  }
+}
