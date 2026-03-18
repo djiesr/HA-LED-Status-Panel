@@ -1,0 +1,211 @@
+Voici le contenu complet :
+
+---
+
+**HA LED Status Panel**
+Document de concept — v0.1 — Mars 2026
+
+---
+
+**1. Contexte et problème**
+
+Home Assistant accumule rapidement des centaines d'entités. Les dashboards Lovelace nécessitent une interaction active, et les notifications deviennent rapidement du bruit. Il manque un moyen de surveiller passivement l'état global du système, visible d'un coup d'oeil sans intervention.
+
+---
+
+**2. Solution proposée**
+
+Un ou plusieurs panneaux de LEDs RGB 8x8 montés physiquement dans l'environnement. Chaque LED (ou groupe de LEDs) représente une entité Home Assistant. La couleur, la luminosité et le comportement (fixe, clignotant, etc.) encodent l'état de cette entité. Un éditeur web visuel permet de configurer les assignations sans toucher au code.
+
+---
+
+**3. Architecture globale**
+
+**3.1 Hardware**
+- Panneaux LED WS281x 8x8 (déjà construits)
+- 1 à 3 panneaux connectés en serpentin continu sur un seul fil DATA
+- Un seul microcontrôleur ESP32 gère l'ensemble de la chaîne
+- Communication : WiFi vers Home Assistant via MQTT ou API native ESPHome
+
+**3.2 Firmware — ESPHome**
+
+ESPHome est retenu comme firmware. Avantages par rapport à WLED :
+- Contrôle individuel de chaque LED par index, natif
+- Intégration HA directe sans addon supplémentaire
+- Les animations (clignotement, fondu) sont définies en C++ lambdas ou en composants custom, déclenchées par des services HA
+- Pas de dépendance à un serveur WLED intermédiaire
+
+**3.3 Communication HA <-> ESP**
+
+Home Assistant orchestre tout. Le flux est le suivant :
+- Une automatisation HA surveille l'état d'une entité
+- Lors d'un changement d'état, elle appelle un service ESPHome (ex. `led_panel.set_led`)
+- L'ESP reçoit la commande avec : index de LED, couleur RGB, luminosité, comportement
+- L'animation tourne en boucle dans le firmware de l'ESP — HA déclenche seulement le début/arrêt
+
+---
+
+**4. Modèle de données — Assignation LED**
+
+La configuration est stockée dans un fichier JSON produit par l'éditeur web et importé dans HA. Chaque entrée représente un groupe de LEDs lié à une entité.
+
+**4.1 Structure JSON**
+```json
+{
+  "panels": 2,
+  "panel_layout": "zigzag",
+  "assignments": [
+    {
+      "id": "battery_mouvement_ss",
+      "label": "Batterie capteur mouvement sous-sol",
+      "leds": [{ "panel": 0, "row": 2, "col": 7 }],
+      "importance": "medium",
+      "brightness_base": 30,
+      "entity": "sensor.mouvement_ss_battery",
+      "rules": [
+        { "condition": "unavailable",  "color": "#9B59B6", "behavior": "solid" },
+        { "condition": "state <= 5",   "color": "#FF0000", "behavior": "blink_fast" },
+        { "condition": "state <= 10",  "color": "#FF0000", "behavior": "solid" },
+        { "condition": "state <= 20",  "color": "#FFFF00", "behavior": "solid" },
+        { "condition": "default",      "color": "#00FF00", "behavior": "solid" }
+      ]
+    }
+  ]
+}
+```
+
+**4.2 Champs de l'assignation**
+
+| Champ | Type | Description |
+|---|---|---|
+| leds | array | Liste de LEDs (panel, row, col). Supporte 1 LED ou un groupe. |
+| entity | string | Identifiant HA de l'entité surveillée (ex. sensor.xxx) |
+| importance | low / medium / high | Détermine la luminosité de base (low=15%, medium=30%, high=100%) |
+| rules | array | Liste de règles évaluées dans l'ordre. La première règle vraie s'applique. |
+| condition | string | Expression : unavailable, state <= X, state == X, attribute.xxx, default |
+| behavior | string | solid, blink_fast, blink_slow, pulse, off |
+
+---
+
+**5. Comportements LED**
+
+Les comportements sont définis une fois dans le firmware ESPHome. HA active/désactive via un service, il ne gère pas la boucle d'animation.
+
+| Comportement | Description |
+|---|---|
+| solid | Couleur fixe à la luminosité définie. |
+| blink_fast | Clignotement rapide (~4 Hz). Alertes critiques. |
+| blink_slow | Clignotement lent (~1 Hz). Alerte secondaire. |
+| pulse | Fondu doux entre luminosité min et max. État actif non-urgent. |
+| off | LED éteinte. |
+
+---
+
+**6. Éditeur visuel (app web standalone)**
+
+**6.1 Objectif**
+
+Application web (React ou HTML/JS pur) accessible en local. Permet de configurer toutes les assignations sans écrire de JSON à la main. Exporte un fichier JSON prêt à être importé dans HA.
+
+**6.2 Fonctionnalités**
+- Affichage visuel d'un, deux ou trois panneaux 8x8 côte à côte
+- Sélection de LEDs par clic ou drag pour former un groupe
+- Panneau latéral : configuration de l'assignation sélectionnée
+  - Recherche et sélection d'une entité HA (via API HA)
+  - Niveau d'importance (low / medium / high)
+  - Ajout/suppression de règles (condition, couleur, comportement, luminosité)
+- Prévisualisation en temps réel : la LED affiche la couleur de la règle active
+- Configuration du type de serpentin (logique WLED)
+- Export / Import JSON
+
+**6.3 Types de serpentin supportés**
+- Zigzag horizontal (rangées alternées gauche-droite / droite-gauche)
+- Lignes droites horizontales
+- Zigzag vertical
+- Lignes droites verticales
+
+Le point de départ (coin supérieur gauche, inférieur gauche, etc.) est configurable par panneau.
+
+**6.4 Connexion à Home Assistant**
+
+URL de HA + Long-Lived Access Token. Stocké en localStorage, jamais exporté dans le JSON de config.
+
+---
+
+**7. Intégration Home Assistant**
+
+**7.1 Structure des automatisations**
+
+Deux approches :
+- **AppDaemon** : script Python qui écoute les changements d'état et appelle les services ESPHome directement. Pas besoin de générer du YAML. Recommandé.
+- **Génération YAML** : le JSON est transformé en automatisations HA standard. Plus portable, mais plus verbeux.
+
+**7.2 Interface ESPHome**
+```yaml
+api:
+  services:
+    - service: set_led
+      variables:
+        led_index: int
+        red: int
+        green: int
+        blue: int
+        brightness: int
+        behavior: string
+      then:
+        - lambda: |-
+            // appel au composant custom
+```
+
+---
+
+**8. Exemples d'assignations**
+
+**Exemple 1 — Batterie capteur mouvement Zigbee (sous-sol)**
+
+| Condition | Couleur | Comportement | Luminosité |
+|---|---|---|---|
+| Indisponible | Mauve | solid | 30% |
+| Batterie <= 5% | Rouge | blink_fast | 30% |
+| Batterie <= 10% | Rouge | solid | 30% |
+| Batterie <= 20% | Jaune | solid | 30% |
+| Default (OK) | Vert | solid | 30% |
+
+**Exemple 2 — Caméra zone sécurisée**
+
+Groupe de 4 LEDs (lignes 4-5, colonnes 5-6). Importance : haute.
+
+| Condition | Couleur | Comportement | Luminosité |
+|---|---|---|---|
+| Mouvement détecté < 1 min | Jaune | blink_fast | 100% |
+| Mouvement détecté >= 1 min | Jaune | solid | 50% |
+| Pas de mouvement (OK) | Bleu | solid | 30% |
+
+**Exemple 3 — Rappel poubelles**
+
+| Condition | Couleur | Comportement | Luminosité |
+|---|---|---|---|
+| Jour J (jour même) | Rose | solid | 50% |
+| Veille (J-1) | Bleu | solid | 30% |
+| Autre jour | — | off | — |
+
+---
+
+**9. Phases de développement**
+
+| Phase | Nom | Contenu |
+|---|---|---|
+| 1 | Firmware ESPHome | Composant custom contrôle LED individuel. Service set_led fonctionnel. Test 1 panneau. |
+| 2 | Éditeur visuel | App web. Sélection LED, config règles, connexion API HA, export JSON. |
+| 3 | Intégration HA | Script AppDaemon qui lit le JSON et gère les automatisations. |
+| 4 | Multi-panneau | Support 2-3 panneaux. Topologies de serpentin. Tests réels. |
+| 5 | Raffinement | Import/export config, UI polish, documentation utilisateur. |
+
+---
+
+**10. Questions ouvertes**
+
+- Calcul de l'index LED : doit-on gérer les panneaux en rotation (orientation physique différente) dans l'éditeur ?
+- Doit-on supporter des conditions basées sur des attributs HA (ex. `attribute.battery_level`) en plus de l'état direct ?
+- Faut-il un mode "night" qui réduit automatiquement toutes les luminosités après une certaine heure ?
+- La connexion API HA dans l'éditeur : HTTP direct, ou passer par un proxy local pour éviter les problèmes CORS ?
