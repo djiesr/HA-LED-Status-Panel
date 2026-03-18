@@ -71,6 +71,21 @@ def _load_config_sync(path: Path) -> dict[str, Any] | None:
         return None
 
 
+def _write_minimal_config_sync(path: Path) -> None:
+    minimal = {
+        "panels": 1,
+        "panel_options": [{"flip_h": False, "flip_v": False, "layout": "zigzag_h"}],
+        "assignments": [],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(minimal, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+        f.flush()
+    tmp.replace(path)
+
+
 async def _load_config(config_path: str, hass: HomeAssistant) -> dict[str, Any] | None:
     """Load JSON config from path (relative to HA config dir or absolute)."""
     path = Path(config_path)
@@ -236,6 +251,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not config_file or not panel_entity_id:
         _LOGGER.error("LED Status Panel: config entry missing config_file or entity_id")
         return False
+
+    path = Path(config_file)
+    if not path.is_absolute():
+        path = Path(hass.config.config_dir) / path
+    if not path.exists():
+        try:
+            await hass.async_add_executor_job(_write_minimal_config_sync, path)
+            _LOGGER.warning("LED Status Panel: config missing; created minimal JSON at %s", path)
+        except OSError as err:
+            _LOGGER.error("LED Status Panel: cannot create config file %s: %s", path, err)
 
     data = await _load_config(config_file, hass)
     if not data:

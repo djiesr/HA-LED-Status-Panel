@@ -27,18 +27,53 @@ CONF_STEP_USER_SCHEMA: VolDictType = {
 }
 
 
-async def _validate_config_file(hass: HomeAssistant, path: str) -> bool:
-    """Check that the config file exists and is valid JSON."""
+async def _ensure_config_file(hass: HomeAssistant, path: str) -> bool:
+    """Ensure config file exists; if missing create minimal valid JSON, else validate JSON."""
     from pathlib import Path
 
-    p = Path(path)
-    if not p.is_absolute():
-        p = Path(hass.config.config_dir) / p
+    p_in = Path(path)
+    p = p_in if p_in.is_absolute() else (Path(hass.config.config_dir) / p_in)
+
     if not p.exists():
-        return False
+        try:
+            import json
+
+            minimal = {
+                "panels": 1,
+                "panel_options": [
+                    {"flip_h": False, "flip_v": False, "layout": "zigzag_h"}
+                ],
+                "assignments": [],
+            }
+            await hass.async_add_executor_job(_write_minimal_json, p, minimal)
+            return p.exists()
+        except OSError as err:
+            return False
     try:
         import json
-        with open(p, encoding="utf-8") as f:
+        ok = await hass.async_add_executor_job(_validate_json_file, p)
+        return ok
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
+def _write_minimal_json(path: "Path", minimal: dict[str, Any]) -> None:
+    import json
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(minimal, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+        f.flush()
+    tmp.replace(path)
+
+
+def _validate_json_file(path: "Path") -> bool:
+    import json
+
+    try:
+        with open(path, encoding="utf-8") as f:
             json.load(f)
         return True
     except (json.JSONDecodeError, OSError):
@@ -68,7 +103,7 @@ class LedStatusPanelConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             elif not entity_id:
                 errors["base"] = "entity_required"
             else:
-                if not await _validate_config_file(self.hass, config_file):
+                if not await _ensure_config_file(self.hass, config_file):
                     errors["base"] = "config_file_invalid"
                 else:
                     await self.async_set_unique_id(f"{DOMAIN}_{entity_id}")
@@ -117,16 +152,11 @@ class LedStatusPanelOptionsFlow(config_entries.OptionsFlow):
                 entity_id = entity_id[0] if entity_id else ""
             entity_id = (entity_id or "").strip()
             errors: dict[str, str] = {}
-            p = Path(config_file) if config_file else None
-            if not p or not p.is_absolute():
-                p = Path(self.hass.config.config_dir) / (config_file or "")
-            if not p.exists():
+            if not config_file:
                 errors["base"] = "config_file_invalid"
             else:
-                try:
-                    with open(p, encoding="utf-8") as f:
-                        json.load(f)
-                except (json.JSONDecodeError, OSError):
+                ok = await _ensure_config_file(self.hass, config_file)
+                if not ok:
                     errors["base"] = "config_file_invalid"
             if not errors:
                 self.hass.config_entries.async_update_entry(
