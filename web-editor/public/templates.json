@@ -1,0 +1,31 @@
+[
+  {
+    "id": "batterie",
+    "name": "Batterie",
+    "importance": "medium",
+    "rules": [
+      { "condition": "state >= 50", "color": "#00FF00", "behavior": "solid" },
+      { "condition": "state >= 10", "color": "#FFFF00", "behavior": "solid" },
+      { "condition": "state >= 1", "color": "#FF0000", "behavior": "solid" },
+      { "condition": "default", "color": "#FF0000", "behavior": "pulse" }
+    ]
+  },
+  {
+    "id": "on_off",
+    "name": "On/Off",
+    "importance": "medium",
+    "rules": [
+      { "condition": "state == \"on\"", "color": "#00FF00", "behavior": "solid" },
+      { "condition": "default", "color": "#333333", "behavior": "solid" }
+    ]
+  },
+  {
+    "id": "unavailable_alert",
+    "name": "Alerte indisponible",
+    "importance": "high",
+    "rules": [
+      { "condition": "unavailable", "color": "#FF6600", "behavior": "blink_fast" },
+      { "condition": "default", "color": "#00FF00", "behavior": "solid" }
+    ]
+  }
+]

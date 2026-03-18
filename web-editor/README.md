@@ -34,7 +34,7 @@ Les fichiers sont dans le dossier `dist/`.
 Copie **tout le contenu** du zip (ou de `dist/`) dans le dossier **www** de ta config HA, dans un sous-dossier `led-panel-editor` :
 
 - **Dossier cible :** `<config>/www/led-panel-editor/`
-- Il doit contenir au minimum : `index.html`, `assets/` (et les fichiers dedans).
+- Il doit contenir au minimum : `index.html`, `assets/` (et les fichiers dedans), et optionnellement `templates.json` (voir section Templates).
 
 ### 3. Ajouter l’éditeur comme carte
 
@@ -69,10 +69,25 @@ Si tu préfères un lien dans la barre latérale (comme une « App ») :
 
 ---
 
+## Interface
+
+- **En-tête (5 lignes)** : titre ; Config JSON et accès HA (token + Enregistrer) ; note si HA détecté ; chemin du JSON + Charger / Sauvegarder sur HA ; Exporter JSON, Importer JSON, langue EN/FR.
+- **3 colonnes** :  
+  - **Colonne 1** : liste des entités HA (recherche), bouton Charger les entités.  
+  - **Colonne 2 (Assignation)** : ID entité, **menu Template** (préconfigurations), possibilités (chips), importance, règles (si / sinon si / sinon), flèches pour réordonner les règles, appliquer à la sélection.  
+  - **Colonne 3 (Panneaux)** : titre Panneaux, **nombre de panneaux (1, 2 ou 3)**, puis grilles 8×8, options flip/sens, supprimer une case / tout supprimer.
+
+## Templates
+
+Les templates préconfigurent **règles + importance** en un clic (ex. Batterie, On/Off, Alerte indisponible). Ils sont chargés depuis un fichier **`templates.json`** placé **dans le même dossier que `index.html`** (p.ex. `<config>/www/led-panel-editor/templates.json`). Au build, le fichier `public/templates.json` est copié dans `dist/` ; tu peux le modifier ou le remplacer après déploiement pour personnaliser les templates sans rebuild. Format : tableau JSON d’objets `{ "id", "name", "importance", "rules": [ { "condition", "color", "behavior" } ] }`. Si le fichier est absent ou invalide, des templates par défaut sont utilisés.
+
+## Règles (if / else if / else)
+
+Les règles sont évaluées **dans l’ordre** : première qui correspond (condition) s’applique. L’interface affiche « si » / « sinon si » / « sinons » pour chaque ligne. Les **flèches ↑ ↓** permettent de modifier l’ordre des règles.
+
 ## Features
 
-- **3 colonnes** : liste des entités HA (recherche), assignation (règles, possibilités, importance), panneaux 8×8.
 - Connexion HA (URL + token en localStorage), chargement des entités, sélection par clic. Pas d’export des secrets dans le JSON.
-- Règles : condition (state, attribute, default, unavailable), couleur, comportement. Bouton pour supprimer une règle.
+- Règles : condition (state, attribute, default, unavailable), couleur, comportement (fixe, clignotement, pulsation, éteint). Suppression et réordonnancement des règles.
 - Grille : clic sur case non assignée = ajout à la sélection ; clic sur case assignée = chargement pour édition. Sous chaque panneau : « Supprimer une case » (mode clic), « Tout supprimer » (avec confirmation).
 - Export / Import JSON. Langue : EN / FR (i18n).

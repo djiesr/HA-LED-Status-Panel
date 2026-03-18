@@ -60,8 +60,8 @@ const defaultAssignment = () => ({
   rules: [{ condition: 'default', color: '#00FF00', behavior: 'solid' }],
 });
 
-// Templates : préconfiguration Règles + Importance (ordre = if, ifelse…, else)
-const RULE_TEMPLATES = [
+// Fallback si templates.json absent ou invalide
+const DEFAULT_RULE_TEMPLATES = [
   {
     id: 'batterie',
     name: 'Batterie',
@@ -172,11 +172,13 @@ function AssignmentColumn({
   removeRuleAt,
   moveRuleUp,
   moveRuleDown,
+  ruleTemplates,
 }) {
   const { t } = useTranslation();
   const [attrKey, setAttrKey] = useState('');
   const [templateId, setTemplateId] = useState('');
   const a = assignment || defaultAssignment();
+  const templates = ruleTemplates && ruleTemplates.length > 0 ? ruleTemplates : DEFAULT_RULE_TEMPLATES;
 
   const selectedEntity = entities.find((e) => e?.entity_id === a.entity_id) || null;
   const attrKeys = selectedEntity
@@ -223,18 +225,18 @@ function AssignmentColumn({
             const id = e.target.value;
             setTemplateId('');
             if (!id) return;
-            const tmpl = RULE_TEMPLATES.find((m) => m.id === id);
+            const tmpl = templates.find((m) => m.id === id);
             if (tmpl) {
               onChange({
                 ...a,
                 importance: tmpl.importance,
-                rules: tmpl.rules.map((r) => ({ ...r })),
+                rules: (tmpl.rules || []).map((r) => ({ ...r })),
               });
             }
           }}
         >
           <option value="">{t('templatePlaceholder')}</option>
-          {RULE_TEMPLATES.map((tmpl) => (
+          {templates.map((tmpl) => (
             <option key={tmpl.id} value={tmpl.id}>
               {tmpl.name}
             </option>
@@ -632,6 +634,7 @@ export default function App() {
   const [entitiesLoading, setEntitiesLoading] = useState(false);
   const [entitiesError, setEntitiesError] = useState(null);
   const [removeModePanel, setRemoveModePanel] = useState(null); // index or null
+  const [ruleTemplates, setRuleTemplates] = useState([]); // chargé depuis templates.json
   const haEmbedded = isRunningInsideHomeAssistant();
   const abortRef = useRef(null);
   const mountedRef = useRef(true);
@@ -642,6 +645,21 @@ export default function App() {
       mountedRef.current = false;
       abortRef.current?.abort();
     };
+  }, []);
+
+  useEffect(() => {
+    const url = new URL('templates.json', window.location.href).href;
+    let cancelled = false;
+    fetch(url)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('templates.json not found'))))
+      .then((data) => {
+        if (cancelled || !mountedRef.current) return;
+        setRuleTemplates(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled && mountedRef.current) setRuleTemplates([]);
+      });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -1095,6 +1113,7 @@ export default function App() {
           removeRuleAt={removeRuleAt}
           moveRuleUp={moveRuleUp}
           moveRuleDown={moveRuleDown}
+          ruleTemplates={ruleTemplates}
         />
         <LedGrid
           numPanels={numPanels}
