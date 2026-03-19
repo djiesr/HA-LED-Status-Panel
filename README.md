@@ -94,6 +94,8 @@ L’éditeur permet de configurer visuellement les panneaux et les assignations,
 
 Instructions détaillées : [web-editor/README.md](web-editor/README.md).
 
+<img width="1343" height="1117" alt="image" src="https://github.com/user-attachments/assets/29a31081-35ad-4022-8058-ccc1f9a080e3" />
+
 ---
 
 ## Structure du dépôt
