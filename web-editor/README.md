@@ -19,15 +19,8 @@ Aucun `configuration.yaml` ni redémarrage : tu ajoutes l’éditeur comme **car
 
 ### 1. Récupérer les fichiers
 
-**Option A — Téléchargement (recommandé)**  
+**Téléchargement (recommandé)**  
 Sur [Releases](https://github.com/djiesr/HA-LED-Status-Panel/releases), télécharge **led-panel-editor.zip**, décompresse-le.
-
-**Option B — Build local**  
-```bash
-npm install
-npm run build:ha
-```
-Les fichiers sont dans le dossier `dist/`.
 
 ### 2. Les mettre dans HA
 
