@@ -252,26 +252,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     except Exception as err:
         _LOGGER.exception("Failed to register HTTP views: %s", err)
 
-    # Serve the Lovelace card JS from the integration's www/ folder.
-    # Accessible at /led_status_panel/led-panel-card.js
-    # Users add it as a Lovelace resource after installing via HACS.
-    try:
-        www_path = Path(__file__).parent / "www"
-        js_file = www_path / "led-panel-card.js"
-        url_path = f"/{DOMAIN}/led-panel-card.js"
-        if js_file.exists() and hass.http is not None:
-            try:
-                from homeassistant.components.http import StaticPathConfig  # HA >= 2024.2
-                await hass.http.async_register_static_paths([
-                    StaticPathConfig(url_path, str(js_file), cache_headers=False)
-                ])
-            except (ImportError, AttributeError):
-                hass.http.register_static_path(url_path, str(js_file), cache_headers=False)
-            _LOGGER.debug("LED Status Panel: carte Lovelace disponible à %s", url_path)
-    except Exception as err:
-        # Never block startup for the card registration
-        _LOGGER.warning("LED Status Panel: impossible d'enregistrer la carte Lovelace: %s", err)
-
     return True
 
 
