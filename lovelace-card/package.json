@@ -1,0 +1,19 @@
+{
+  "name": "led-panel-card",
+  "version": "0.1.0",
+  "description": "Lovelace card for LED Status Panel (WS2812 8x8)",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c rollup.config.js",
+    "dev": "rollup -c rollup.config.js --watch"
+  },
+  "dependencies": {
+    "lit": "^3.2.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^15.2.0",
+    "@rollup/plugin-terser": "^0.4.4",
+    "rollup": "^4.18.0"
+  }
+}

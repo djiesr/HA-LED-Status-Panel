@@ -4,8 +4,9 @@ DOMAIN = "led_status_panel"
 
 CONF_CONFIG_FILE = "config_file"
 CONF_ENTITY_ID = "entity_id"
+CONF_PANELS = "panels"
 
-# Per-panel options (stored in JSON panel_options list)
+# Per-panel options (stored in JSON panel_options list and config entry)
 CONF_PANEL_OPTIONS = "panel_options"
 CONF_FLIP_H = "flip_h"
 CONF_FLIP_V = "flip_v"
@@ -15,6 +16,28 @@ DEFAULT_PANELS = 1
 DEFAULT_LAYOUT = "zigzag_h"
 DEFAULT_FLIP_H = False
 DEFAULT_FLIP_V = False
+
+# Start corner → (flip_h, flip_v)
+PANEL_START_FLIPS: dict[str, dict[str, bool]] = {
+    "top_left":     {"flip_h": False, "flip_v": False},
+    "top_right":    {"flip_h": True,  "flip_v": False},
+    "bottom_left":  {"flip_h": False, "flip_v": True},
+    "bottom_right": {"flip_h": True,  "flip_v": True},
+}
+
+def panel_ui_to_options(start: str, direction: str) -> dict:
+    """Convert UI start corner + direction to internal panel_options dict."""
+    flips = PANEL_START_FLIPS.get(start, {"flip_h": False, "flip_v": False})
+    return {"flip_h": flips["flip_h"], "flip_v": flips["flip_v"], "layout": direction}
+
+def panel_options_to_ui(opts: dict) -> tuple[str, str]:
+    """Convert internal panel_options dict back to (start, direction) for UI."""
+    flip_h = opts.get("flip_h", False)
+    flip_v = opts.get("flip_v", False)
+    for start, flips in PANEL_START_FLIPS.items():
+        if flips["flip_h"] == flip_h and flips["flip_v"] == flip_v:
+            return start, opts.get("layout", DEFAULT_LAYOUT)
+    return "top_left", opts.get("layout", DEFAULT_LAYOUT)
 
 # Importance -> brightness percent (low=15%, medium=30%, high=100%)
 IMPORTANCE_BRIGHTNESS = {

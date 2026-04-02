@@ -1,0 +1,63 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure LED Status Panel",
+        "description": "Path to the JSON configuration file and the ESPHome panel entity.",
+        "data": {
+          "config_file": "Config file (e.g. led_panel_config.json)",
+          "entity_id": "Panel entity (light.xxx)"
+        }
+      },
+      "panels": {
+        "title": "Number of panels",
+        "description": "How many 8×8 panels are connected in series on this ESP?",
+        "data": {
+          "panels": "Number of panels"
+        }
+      },
+      "panel_config": {
+        "title": "LED Panel {panel} of {total}",
+        "description": "Set the corner where the LED strip starts and the wiring direction.",
+        "data": {
+          "start": "Strip start corner",
+          "direction": "Serpentine direction"
+        }
+      }
+    },
+    "error": {
+      "config_file_required": "Please specify the JSON configuration file.",
+      "entity_required": "Please select the panel entity.",
+      "config_file_invalid": "File not found or invalid JSON."
+    },
+    "abort": {
+      "already_configured": "This entity is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options — File and entity",
+        "data": {
+          "config_file": "Config file",
+          "entity_id": "Panel entity"
+        }
+      },
+      "panels": {
+        "title": "Number of panels",
+        "description": "How many 8×8 panels are connected in series on this ESP?",
+        "data": {
+          "panels": "Number of panels"
+        }
+      },
+      "panel_config": {
+        "title": "LED Panel {panel} of {total}",
+        "description": "Start corner and serpentine direction for this panel.",
+        "data": {
+          "start": "Strip start corner",
+          "direction": "Serpentine direction"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "panels": 2,
+  "panel_layout": "zigzag",
+  "assignments": [
+    {
+      "id": "assignment_1773687308846",
+      "label": "light.wled_bar_a_chat",
+      "leds": [
+        {
+          "panel": 0,
+          "row": 1,
+          "col": 1
+        }
+      ],
+      "importance": "medium",
+      "brightness_base": 30,
+      "entity_id": "light.wled_bar_a_chat",
+      "rules": [
+        {
+          "condition": "default",
+          "color": "#ff00dd",
+          "behavior": "blink_slow"
+        },
+        {
+          "condition": "state == on",
+          "color": "#2bff00",
+          "behavior": "solid"
+        }
+      ]
+    },
+    {
+      "id": "assignment_1773687389207",
+      "label": "light.wled_panneau_js",
+      "leds": [
+        {
+          "panel": 0,
+          "row": 5,
+          "col": 3
+        }
+      ],
+      "importance": "high",
+      "brightness_base": 30,
+      "entity_id": "light.wled_panneau_js",
+      "rules": [
+        {
+          "condition": "state == on",
+          "color": "#0011ff",
+          "behavior": "pulse"
+        },
+        {
+          "condition": "state == off",
+          "color": "#ffa200",
+          "behavior": "solid"
+        }
+      ]
+    },
+    {
+      "id": "assignment_1773687335168",
+      "label": "light.wled_bar_a_chat",
+      "leds": [
+        {
+          "panel": 0,
+          "row": 2,
+          "col": 6
+        },
+        {
+          "panel": 1,
+          "row": 0,
+          "col": 0
+        },
+        {
+          "panel": 1,
+          "row": 6,
+          "col": 6
+        },
+        {
+          "panel": 1,
+          "row": 1,
+          "col": 6
+        },
+        {
+          "panel": 1,
+          "row": 7,
+          "col": 0
+        },
+        {
+          "panel": 1,
+          "row": 3,
+          "col": 4
+        },
+        {
+          "panel": 1,
+          "row": 4,
+          "col": 1
+        },
+        {
+          "panel": 1,
+          "row": 1,
+          "col": 1
+        },
+        {
+          "panel": 1,
+          "row": 6,
+          "col": 3
+        },
+        {
+          "panel": 1,
+          "row": 1,
+          "col": 3
+        }
+      ],
+      "importance": "medium",
+      "brightness_base": 30,
+      "entity_id": "light.wled_bar_a_chat",
+      "rules": [
+        {
+          "condition": "state == on",
+          "color": "#00ffcc",
+          "behavior": "solid"
+        },
+        {
+          "condition": "state == off",
+          "color": "#3bbc38",
+          "behavior": "solid"
+        }
+      ]
+    },
+    {
+      "id": "assignment_1773784297869",
+      "label": "sensor.thermomaven_g1_2esa_battery",
+      "leds": [
+        {
+          "panel": 1,
+          "row": 4,
+          "col": 6
+        }
+      ],
+      "importance": "medium",
+      "brightness_base": 30,
+      "entity_id": "sensor.thermomaven_g1_2esa_battery",
+      "rules": [
+        {
+          "condition": "state >= 50",
+          "color": "#00FF00",
+          "behavior": "solid"
+        },
+        {
+          "condition": "state >= 10",
+          "color": "#FFFF00",
+          "behavior": "solid"
+        },
+        {
+          "condition": "state >= 1",
+          "color": "#FF0000",
+          "behavior": "solid"
+        },
+        {
+          "condition": "default",
+          "color": "#FF0000",
+          "behavior": "pulse"
+        }
+      ]
+    }
+  ],
+  "panel_options": [
+    {
+      "flip_h": false,
+      "flip_v": false,
+      "layout": "zigzag_h"
+    },
+    {
+      "flip_h": false,
+      "flip_v": false,
+      "layout": "zigzag_h"
+    }
+  ]
+}

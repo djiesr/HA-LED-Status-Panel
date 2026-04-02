@@ -113,8 +113,77 @@ class LedStatusPanelFileView(HomeAssistantView):
         return self.json({"ok": True, "path": str(path)})
 
 
+class LedStatusPanelInfoView(HomeAssistantView):
+    """Resolve config_path from a panel_code (light entity_id).
+
+    The Lovelace card uses panel_code (e.g. light.bureau_led_status_panel) to
+    find the config entry and obtain the config file path, without the user
+    having to know the raw file path.
+    """
+
+    url = "/api/led_status_panel/panel"
+    name = "api:led_status_panel:panel"
+    requires_auth = True
+
+    async def get(self, request):
+        hass: HomeAssistant = request.app["hass"]
+        panel_code = (request.query.get("panel_code") or "").strip()
+        if not panel_code:
+            return self.json({"ok": False, "error": "panel_code_required"}, status_code=400)
+
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            if entry.data.get("entity_id") == panel_code:
+                config_path = entry.data.get("config_file", "")
+                return self.json({
+                    "ok": True,
+                    "config_path": config_path,
+                    "panel_code": panel_code,
+                    "entry_id": entry.entry_id,
+                })
+
+        return self.json({"ok": False, "error": "panel_not_found"}, status_code=404)
+
+
+class LedStatusPanelReloadView(HomeAssistantView):
+    """Reload a config entry by entry_id or config_path."""
+
+    url = "/api/led_status_panel/reload"
+    name = "api:led_status_panel:reload"
+    requires_auth = True
+
+    async def post(self, request):
+        hass: HomeAssistant = request.app["hass"]
+        try:
+            body = await request.json()
+        except Exception:
+            return self.json({"ok": False, "error": "invalid_body"}, status_code=400)
+
+        entry_id = (body.get("entry_id") or "").strip()
+
+        # Resolve entry_id from config_path if not provided directly
+        if not entry_id:
+            config_path = (body.get("config_path") or "").strip()
+            for entry in hass.config_entries.async_entries(DOMAIN):
+                if entry.data.get("config_file", "") == config_path:
+                    entry_id = entry.entry_id
+                    break
+
+        if not entry_id:
+            return self.json({"ok": False, "error": "entry_not_found"}, status_code=404)
+
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if not entry:
+            return self.json({"ok": False, "error": "entry_not_found"}, status_code=404)
+
+        await hass.config_entries.async_reload(entry_id)
+        _LOGGER.info("LED Status Panel: config entry %s rechargée via API", entry_id)
+        return self.json({"ok": True, "entry_id": entry_id})
+
+
 async def async_register_http_views(hass: HomeAssistant) -> None:
     """Register HTTP views for this integration."""
     hass.http.register_view(LedStatusPanelFileView)
+    hass.http.register_view(LedStatusPanelInfoView)
+    hass.http.register_view(LedStatusPanelReloadView)
     _LOGGER.debug("%s HTTP API registered", DOMAIN)
 

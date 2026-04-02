@@ -8,6 +8,9 @@ __pycache__/
 .venv/
 venv/
 
+# Lovelace card dependencies
+lovelace-card/node_modules/
+
 # IDE / OS
 .vscode/
 .idea/

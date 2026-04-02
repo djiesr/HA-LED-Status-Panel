@@ -27,6 +27,7 @@ from .const import (
     CONF_FLIP_V,
     CONF_LAYOUT,
     CONF_PANEL_OPTIONS,
+    CONF_PANELS,
     DEFAULT_LAYOUT,
     DEFAULT_PANELS,
     DOMAIN,
@@ -69,6 +70,16 @@ def _load_config_sync(path: Path) -> dict[str, Any] | None:
     except (json.JSONDecodeError, OSError) as e:
         _LOGGER.exception("Failed to load config: %s", e)
         return None
+
+
+def _write_json_sync(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+        f.flush()
+    tmp.replace(path)
 
 
 def _write_minimal_config_sync(path: Path) -> None:
@@ -270,6 +281,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         return False
 
+    # Sync panel configuration from config entry into JSON (config entry is the source of truth)
+    entry_panels = entry.data.get(CONF_PANELS)
+    entry_panel_options = entry.data.get(CONF_PANEL_OPTIONS)
+    if entry_panels is not None or entry_panel_options is not None:
+        changed = False
+        if entry_panels is not None and data.get("panels") != entry_panels:
+            data["panels"] = entry_panels
+            changed = True
+        if entry_panel_options is not None and data.get(CONF_PANEL_OPTIONS) != entry_panel_options:
+            data[CONF_PANEL_OPTIONS] = entry_panel_options
+            changed = True
+        if changed:
+            config_path = Path(config_file)
+            if not config_path.is_absolute():
+                config_path = Path(hass.config.config_dir) / config_path
+            try:
+                await hass.async_add_executor_job(_write_json_sync, config_path, data)
+                _LOGGER.info("LED Status Panel: panel_options synchronisées dans %s", config_file)
+            except OSError as err:
+                _LOGGER.warning("LED Status Panel: impossible de synchroniser panel_options: %s", err)
+
     panels = data.get("panels", DEFAULT_PANELS)
     layout = data.get("panel_layout", DEFAULT_LAYOUT)
     panel_options = data.get(CONF_PANEL_OPTIONS)  # list of { flip_h, flip_v, layout } per panel
@@ -298,6 +330,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _call_set_led_with_retry(service_data: dict, led_idx: int, service_name: str) -> None:
         """Call set_led with retries when ESPHome starts after the integration.
         service_name is the per-device name (e.g. led_status_panel_2_set_led)."""
+        from homeassistant.exceptions import HomeAssistantError  # noqa: PLC0415
+
         for attempt in range(SET_LED_RETRY_COUNT):
             try:
                 await hass.services.async_call(
@@ -318,6 +352,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             "Les LEDs se mettront à jour au prochain changement d'état ou après reconnexion.",
                             service_name,
                         )
+            except HomeAssistantError as err:
+                # ESPHome connection not ready yet (e.g. after integration reload)
+                if attempt < SET_LED_RETRY_COUNT - 1:
+                    _LOGGER.debug(
+                        "LED Status Panel: connexion ESPHome pas prête, retry %d/%d (led_index=%s)",
+                        attempt + 1,
+                        SET_LED_RETRY_COUNT,
+                        led_idx,
+                    )
+                    await asyncio.sleep(SET_LED_RETRY_DELAY)
+                else:
+                    _LOGGER.warning(
+                        "LED Status Panel: échec set_led après %d tentatives (led_index=%s): %s",
+                        SET_LED_RETRY_COUNT,
+                        led_idx,
+                        err,
+                    )
             except Exception as err:
                 _LOGGER.exception(
                     "LED Status Panel: échec set_led (led_index=%s): %s",
@@ -404,12 +455,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     @callback
     def _panel_became_available(event: Event) -> None:
+        """Re-apply all entity states whenever the ESPHome panel reconnects.
+
+        ESPHome resets all LEDs to off when it reconnects. We need to re-send
+        every LED state so the panel reflects the current HA entity states.
+        This fires every time the panel goes unavailable → available, which covers:
+        - Initial HA boot (ESPHome connects after integration loads)
+        - ESPHome reboot / network reconnection
+        - Integration reload
+        """
+        old_state = event.data.get("old_state")
         new_state = event.data.get("new_state")
-        if new_state and new_state.state != "unavailable":
+        old_str = old_state.state if old_state else "unavailable"
+        new_str = new_state.state if new_state else "unavailable"
+        if old_str == "unavailable" and new_str != "unavailable":
+            _LOGGER.info(
+                "LED Status Panel: panneau '%s' de nouveau disponible — ré-application de tous les états",
+                panel_entity_id,
+            )
             _apply_initial_states()
-            if panel_unsub and callable(panel_unsub) and panel_unsub in unsubs:
-                unsubs.remove(panel_unsub)
-                panel_unsub()
 
     for assignment in assignments:
         entity_id = assignment.get("entity_id")
@@ -417,13 +481,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             unsubs.append(
                 async_track_state_change_event(hass, entity_id, _on_state_changed)
             )
-    panel_unsub = async_track_state_change_event(
-        hass, panel_entity_id, _panel_became_available
+    unsubs.append(
+        async_track_state_change_event(hass, panel_entity_id, _panel_became_available)
     )
-    unsubs.append(panel_unsub)
 
+    # Fallback: also apply after a delay in case the panel was already available
+    # when the integration loaded (no state change event would have fired).
     async def _apply_initial_states_delayed() -> None:
-        await asyncio.sleep(45)
+        await asyncio.sleep(10)
         _apply_initial_states()
 
     hass.async_create_task(_apply_initial_states_delayed())
