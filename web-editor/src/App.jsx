@@ -60,7 +60,7 @@ const defaultAssignment = () => ({
   rules: [{ condition: 'default', color: '#00FF00', behavior: 'solid' }],
 });
 
-// Fallback si templates.json absent ou invalide
+// Fallback si templates.json absent ou invalide (aligné sur lovelace-card color-utils + templates.json)
 const DEFAULT_RULE_TEMPLATES = [
   {
     id: 'batterie',
@@ -89,6 +89,173 @@ const DEFAULT_RULE_TEMPLATES = [
     rules: [
       { condition: 'unavailable', color: '#FF6600', behavior: 'blink_fast' },
       { condition: 'default', color: '#00FF00', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'temp_hot',
+    name: 'Température chaude (équipement)',
+    importance: 'medium',
+    rules: [
+      { condition: 'state >= 80', color: '#FF0000', behavior: 'pulse' },
+      { condition: 'state >= 60', color: '#FF3300', behavior: 'solid' },
+      { condition: 'state >= 45', color: '#FF8800', behavior: 'solid' },
+      { condition: 'state >= 35', color: '#FFDD00', behavior: 'solid' },
+      { condition: 'default', color: '#00FF00', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'temp_fridge',
+    name: 'Réfrigérateur (°C)',
+    importance: 'medium',
+    rules: [
+      { condition: 'state >= 15', color: '#FF0000', behavior: 'pulse' },
+      { condition: 'state >= 12', color: '#FF6600', behavior: 'solid' },
+      { condition: 'state >= 10', color: '#FFAA00', behavior: 'solid' },
+      { condition: 'state >= 8', color: '#FFFF00', behavior: 'solid' },
+      { condition: 'state >= 2', color: '#00FF00', behavior: 'solid' },
+      { condition: 'state >= 0', color: '#00DDFF', behavior: 'solid' },
+      { condition: 'default', color: '#0088FF', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'temp_freezer',
+    name: 'Congélateur (°C)',
+    importance: 'medium',
+    rules: [
+      { condition: 'state >= -10', color: '#FF0000', behavior: 'pulse' },
+      { condition: 'state >= -15', color: '#FF6600', behavior: 'solid' },
+      { condition: 'state >= -18', color: '#FFCC00', behavior: 'solid' },
+      { condition: 'default', color: '#00FF00', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'temp_room',
+    name: 'Pièce / confort (°C)',
+    importance: 'medium',
+    rules: [
+      { condition: 'state >= 28', color: '#FF2200', behavior: 'solid' },
+      { condition: 'state >= 26', color: '#FF8800', behavior: 'solid' },
+      { condition: 'state >= 24', color: '#FFDD00', behavior: 'solid' },
+      { condition: 'state >= 19', color: '#00FF00', behavior: 'solid' },
+      { condition: 'state >= 16', color: '#00DDFF', behavior: 'solid' },
+      { condition: 'default', color: '#0088FF', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'humidity_plant',
+    name: 'Humidité sol / plante (%)',
+    importance: 'medium',
+    rules: [
+      { condition: 'state < 20', color: '#FF0000', behavior: 'pulse' },
+      { condition: 'state < 35', color: '#FF8800', behavior: 'solid' },
+      { condition: 'state < 50', color: '#FFDD00', behavior: 'solid' },
+      { condition: 'state < 70', color: '#00FF00', behavior: 'solid' },
+      { condition: 'default', color: '#0088FF', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'humidity_room',
+    name: 'Humidité maison (%)',
+    importance: 'medium',
+    rules: [
+      { condition: 'state >= 70', color: '#CC2200', behavior: 'solid' },
+      { condition: 'state >= 65', color: '#FF6600', behavior: 'solid' },
+      { condition: 'state >= 60', color: '#FFCC00', behavior: 'solid' },
+      { condition: 'state >= 35', color: '#00FF00', behavior: 'solid' },
+      { condition: 'state >= 30', color: '#FFCC00', behavior: 'solid' },
+      { condition: 'default', color: '#FF8800', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'power_instant',
+    name: 'Puissance (W)',
+    importance: 'medium',
+    rules: [
+      { condition: 'state >= 2000', color: '#FF0000', behavior: 'pulse' },
+      { condition: 'state >= 1000', color: '#FF6600', behavior: 'solid' },
+      { condition: 'state >= 200', color: '#FFCC00', behavior: 'solid' },
+      { condition: 'state >= 50', color: '#88FF00', behavior: 'solid' },
+      { condition: 'default', color: '#444444', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'energy_period',
+    name: 'Énergie (kWh)',
+    importance: 'medium',
+    rules: [
+      { condition: 'state >= 30', color: '#FF0000', behavior: 'solid' },
+      { condition: 'state >= 15', color: '#FF8800', behavior: 'solid' },
+      { condition: 'state >= 5', color: '#FFDD00', behavior: 'solid' },
+      { condition: 'default', color: '#00CC00', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'air_pm25',
+    name: 'PM2.5 (µg/m³)',
+    importance: 'high',
+    rules: [
+      { condition: 'state >= 55', color: '#CC0000', behavior: 'solid' },
+      { condition: 'state >= 35', color: '#FF8800', behavior: 'solid' },
+      { condition: 'state >= 12', color: '#FFDD00', behavior: 'solid' },
+      { condition: 'default', color: '#00CC00', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'air_pm10',
+    name: 'PM10 (µg/m³)',
+    importance: 'high',
+    rules: [
+      { condition: 'state >= 100', color: '#CC0000', behavior: 'solid' },
+      { condition: 'state >= 50', color: '#FF8800', behavior: 'solid' },
+      { condition: 'state >= 45', color: '#FFDD00', behavior: 'solid' },
+      { condition: 'default', color: '#00CC00', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'air_co2',
+    name: 'CO₂ (ppm)',
+    importance: 'high',
+    rules: [
+      { condition: 'state >= 2000', color: '#FF0000', behavior: 'pulse' },
+      { condition: 'state >= 1500', color: '#FF3300', behavior: 'solid' },
+      { condition: 'state >= 1000', color: '#FF8800', behavior: 'solid' },
+      { condition: 'state >= 800', color: '#FFDD00', behavior: 'solid' },
+      { condition: 'default', color: '#00CC00', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'air_radon',
+    name: 'Radon (Bq/m³)',
+    importance: 'high',
+    rules: [
+      { condition: 'state >= 300', color: '#CC0000', behavior: 'pulse' },
+      { condition: 'state >= 200', color: '#FF6600', behavior: 'solid' },
+      { condition: 'state >= 100', color: '#FFCC00', behavior: 'solid' },
+      { condition: 'default', color: '#00CC00', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'noise_db',
+    name: 'Bruit (dB)',
+    importance: 'medium',
+    rules: [
+      { condition: 'state >= 80', color: '#FF0000', behavior: 'solid' },
+      { condition: 'state >= 70', color: '#FF8800', behavior: 'solid' },
+      { condition: 'state >= 55', color: '#FFDD00', behavior: 'solid' },
+      { condition: 'state >= 40', color: '#00FF00', behavior: 'solid' },
+      { condition: 'default', color: '#0088CC', behavior: 'solid' },
+    ],
+  },
+  {
+    id: 'uv_index',
+    name: 'Indice UV',
+    importance: 'medium',
+    rules: [
+      { condition: 'state >= 11', color: '#AA00FF', behavior: 'pulse' },
+      { condition: 'state >= 8', color: '#FF0000', behavior: 'solid' },
+      { condition: 'state >= 6', color: '#FF8800', behavior: 'solid' },
+      { condition: 'state >= 3', color: '#FFDD00', behavior: 'solid' },
+      { condition: 'default', color: '#00CC44', behavior: 'solid' },
     ],
   },
 ];
